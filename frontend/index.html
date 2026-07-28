@@ -302,6 +302,108 @@
       100% { left: 100%; }
     }
 
+    /* --- Toast notifications --- */
+    .toast-container {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 380px;
+    }
+    .toast {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.85rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      animation: toast-in 0.2s ease;
+    }
+    .toast.success { border-left-color: var(--success); }
+    .toast.error { border-left-color: var(--danger); }
+    .toast.fade-out { animation: toast-out 0.2s ease forwards; }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes toast-out {
+      from { opacity: 1; transform: translateX(0); }
+      to { opacity: 0; transform: translateX(20px); }
+    }
+
+    /* --- Tasks dropdown --- */
+    .tasks-count {
+      display: inline-block;
+      background: var(--accent);
+      color: #0b0d12;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 1px 7px;
+      margin-left: 4px;
+    }
+    .tasks-panel {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      width: 340px;
+      max-height: 400px;
+      overflow-y: auto;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: var(--radius);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+      z-index: 900;
+      padding: 10px;
+    }
+    .tasks-panel-header {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--text-dim);
+      padding: 4px 6px 10px;
+    }
+    .tasks-empty {
+      color: var(--text-dim);
+      font-size: 0.82rem;
+      padding: 6px;
+    }
+    .task-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 6px;
+      border-bottom: 1px solid var(--panel-border);
+      font-size: 0.82rem;
+    }
+    .task-row:last-child { border-bottom: none; }
+    .task-row .task-label {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .task-badge {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .task-badge.phase-done { background: rgba(61,220,132,0.15); color: var(--success); }
+    .task-badge.phase-error { background: rgba(255,107,107,0.15); color: var(--danger); }
+    .task-badge.phase-building,
+    .task-badge.phase-inspecting,
+    .task-badge.phase-extracting { background: rgba(91,140,255,0.15); color: var(--accent); }
+    .task-badge.phase-ready_for_selection { background: rgba(139,147,163,0.15); color: var(--text-dim); }
+    .task-row button { padding: 3px 9px; font-size: 0.72rem; }
+
     .hidden { display: none !important; }
 
     .error {
@@ -314,6 +416,9 @@
       margin-bottom: 16px;
     }
 
+    #download-section {
+      margin-top: 24px;
+    }
     #download-section p {
       color: var(--success);
       font-weight: 600;
@@ -327,9 +432,20 @@
   <p style="color: var(--text-dim); margin-top: -16px; margin-bottom: 8px; font-size: 0.9rem;">
     Upload, inject drivers, export &mdash; no manual PowerCLI session needed.
   </p>
-  <div style="margin-bottom: 28px;">
+  <div style="margin-bottom: 28px; display: flex; align-items: center; gap: 10px;">
     <button type="button" id="startOverTopBtn">Start Over</button>
+    <div style="position: relative;">
+      <button type="button" id="tasksBtn" class="secondary">Tasks <span id="tasksCount" class="tasks-count hidden">0</span></button>
+      <div id="tasksPanel" class="tasks-panel hidden">
+        <div class="tasks-panel-header">Tracked jobs (this browser)</div>
+        <div id="tasksList" class="tasks-list">
+          <p class="tasks-empty">No jobs tracked yet.</p>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <div id="toastContainer" class="toast-container"></div>
 
   <div class="two-col">
   <fieldset id="upload-section">

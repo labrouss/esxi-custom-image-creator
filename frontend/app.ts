@@ -51,6 +51,84 @@ const downloadBundleLink = document.getElementById("downloadBundleLink") as HTML
 let currentJobId: string | null = null;
 let pollTimer: number | null = null;
 
+// --- Toast notifications ---
+const toastContainer = document.getElementById("toastContainer")!;
+
+function showToast(message: string, type: "info" | "success" | "error" = "info") {
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add("fade-out");
+    setTimeout(() => toast.remove(), 200);
+  }, 5000);
+}
+
+// --- Task tracking (persisted in localStorage so a reload doesn't lose the list) ---
+interface TrackedTask {
+  id: string;
+  label: string;
+  createdAt: string;
+}
+
+const TASKS_STORAGE_KEY = "esxiBuilderTrackedTasks";
+
+function getTrackedTasks(): TrackedTask[] {
+  try {
+    return JSON.parse(localStorage.getItem(TASKS_STORAGE_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveTrackedTasks(tasks: TrackedTask[]) {
+  localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
+}
+
+function trackTask(id: string, label: string) {
+  const tasks = getTrackedTasks();
+  if (!tasks.some((t) => t.id === id)) {
+    tasks.unshift({ id, label, createdAt: new Date().toISOString() });
+    saveTrackedTasks(tasks);
+  }
+  renderTasksCount();
+}
+
+function updateTaskLabel(id: string, label: string) {
+  const tasks = getTrackedTasks();
+  const task = tasks.find((t) => t.id === id);
+  if (task) {
+    task.label = label;
+    saveTrackedTasks(tasks);
+  }
+}
+
+function untrackTask(id: string) {
+  saveTrackedTasks(getTrackedTasks().filter((t) => t.id !== id));
+  renderTasksCount();
+}
+
+function renderTasksCount() {
+  const count = getTrackedTasks().length;
+  const countEl = document.getElementById("tasksCount")!;
+  countEl.textContent = String(count);
+  countEl.classList.toggle("hidden", count === 0);
+}
+renderTasksCount();
+
+// Avoid re-toasting the same phase transition on every 2s poll tick.
+const lastNotifiedPhase = new Map<string, string>();
+function notifyPhaseChange(jobId: string, phase: string, extra?: string) {
+  if (lastNotifiedPhase.get(jobId) === phase) return;
+  lastNotifiedPhase.set(jobId, phase);
+  const shortId = jobId.split("-")[0];
+  if (phase === "ready_for_selection") showToast(`Job ${shortId}: drivers ready to select`, "success");
+  else if (phase === "building") showToast(`Job ${shortId}: build started`, "info");
+  else if (phase === "done") showToast(`Job ${shortId}: build complete — ready to download`, "success");
+  else if (phase === "error") showToast(`Job ${shortId} failed: ${extra ?? "unknown error"}`, "error");
+}
+
 function startOver(e?: Event) {
   e?.preventDefault();
   window.location.reload();
@@ -138,6 +216,7 @@ async function poll(jobId: string) {
   const res = await fetch(`/api/jobs/${jobId}`);
   const job: JobState = await res.json();
   renderLog(job.log ?? []);
+  notifyPhaseChange(jobId, job.phase, job.error);
 
   if (job.phase === "building") {
     buildProgressTrack.classList.remove("hidden");
@@ -182,12 +261,97 @@ async function poll(jobId: string) {
   }
 }
 
+const tasksBtn = document.getElementById("tasksBtn") as HTMLButtonElement;
+const tasksPanel = document.getElementById("tasksPanel")!;
+const tasksList = document.getElementById("tasksList")!;
+
+async function renderTasksPanel() {
+  const tasks = getTrackedTasks();
+  if (tasks.length === 0) {
+    tasksList.innerHTML = '<p class="tasks-empty">No jobs tracked yet.</p>';
+    return;
+  }
+
+  // Fetch each tracked job's live phase; treat a failed/404 lookup as "expired"
+  // (e.g. the server restarted and its in-memory job store was cleared).
+  const rows = await Promise.all(
+    tasks.map(async (t) => {
+      try {
+        const res = await fetch(`/api/jobs/${t.id}`);
+        if (!res.ok) return { ...t, phase: "expired" };
+        const job: JobState = await res.json();
+        return { ...t, phase: job.phase };
+      } catch {
+        return { ...t, phase: "expired" };
+      }
+    })
+  );
+
+  tasksList.innerHTML = rows
+    .map((r) => {
+      const isCurrent = r.id === currentJobId;
+      return `
+        <div class="task-row">
+          <span class="task-label" title="${r.label}">${r.label}${isCurrent ? " (current)" : ""}</span>
+          <span class="task-badge phase-${r.phase}">${r.phase}</span>
+          <button type="button" class="secondary" data-action="view-task" data-id="${r.id}">View</button>
+          <button type="button" class="secondary danger" data-action="remove-task" data-id="${r.id}">✕</button>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+tasksBtn.addEventListener("click", async (e) => {
+  e.stopPropagation();
+  const isHidden = tasksPanel.classList.contains("hidden");
+  if (isHidden) {
+    tasksPanel.classList.remove("hidden");
+    await renderTasksPanel();
+  } else {
+    tasksPanel.classList.add("hidden");
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (!tasksPanel.classList.contains("hidden") && !tasksPanel.contains(e.target as Node) && e.target !== tasksBtn) {
+    tasksPanel.classList.add("hidden");
+  }
+});
+
+function switchToJob(jobId: string) {
+  currentJobId = jobId;
+  clearError();
+  downloadSection.classList.add("hidden");
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = window.setInterval(() => poll(jobId), 2000);
+  poll(jobId);
+  showToast(`Switched to job ${jobId.split("-")[0]}`, "info");
+}
+
+tasksList.addEventListener("click", async (e) => {
+  const viewBtn = (e.target as HTMLElement)?.closest('[data-action="view-task"]') as HTMLButtonElement | null;
+  const removeBtn = (e.target as HTMLElement)?.closest('[data-action="remove-task"]') as HTMLButtonElement | null;
+
+  if (viewBtn) {
+    switchToJob(viewBtn.dataset.id!);
+    tasksPanel.classList.add("hidden");
+  }
+
+  if (removeBtn) {
+    untrackTask(removeBtn.dataset.id!);
+    await renderTasksPanel();
+  }
+});
+
 async function ensureJob(): Promise<string> {
   if (currentJobId) return currentJobId;
   const res = await fetch("/api/upload/create", { method: "POST" });
   if (!res.ok) throw new Error("Failed to create job");
   const { jobId } = await res.json();
   currentJobId = jobId;
+  trackTask(jobId, `Job ${jobId.split("-")[0]}`);
+  showToast(`New job started (${jobId.split("-")[0]})`, "info");
   if (!pollTimer) pollTimer = window.setInterval(() => poll(currentJobId!), 2000);
   return jobId;
 }
@@ -438,6 +602,8 @@ driverReuseBtn.addEventListener("click", async () => {
     }
     uploadDriverBtn.textContent = "Using cached ✓";
     uploadDriverBtn.disabled = true;
+    const label = driverReuseSelect.selectedOptions[0]?.textContent?.split(" (")[0];
+    if (label) updateTaskLabel(jobId, label);
   } catch (e: any) {
     showError(e.message);
   } finally {
@@ -492,6 +658,7 @@ uploadDriverBtn.addEventListener("click", async () => {
       driverProgressLabel,
       uploadDriverBtn
     );
+    updateTaskLabel(jobId, file.name);
   } catch (e: any) {
     showError(e.message);
     uploadDriverBtn.disabled = false;

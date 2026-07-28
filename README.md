@@ -77,6 +77,30 @@ ISO/bundle sitting in `/data/output`, with a Download and a Delete button
 per entry — useful for cleaning up old builds or grabbing one from an
 earlier session without digging through the container's filesystem.
 
+## Notifications & job tracking
+
+- **Toasts**: a small pop-up appears top-right for key events — job
+  created, drivers ready to select, build started, build complete, or a
+  failure with the error message. Each auto-dismisses after 5 seconds.
+- **Tasks panel**: the "Tasks" button (next to Start Over) opens a dropdown
+  listing every job created in this browser, persisted in `localStorage` so
+  it survives a page reload. Each row shows a short label (the SPP/base
+  filename once known), a live phase badge, a **View** button to switch the
+  page over to that job's current state (log, driver selection, build
+  progress, or download links — whichever applies), and a **✕** to remove
+  it from the tracked list (this only forgets it locally; it doesn't delete
+  anything server-side).
+- Since job state lives in-memory on the server (see the `jobManager.ts`
+  caveat above), a tracked job shows as **expired** if the server has
+  restarted since it was created — the tracking list itself has no way to
+  know that ahead of time, so this is discovered when you open the panel.
+- **Known limitation**: switching to a tracked job via View correctly
+  restores its log, driver list, build progress, and download links (all
+  driven by polling `/api/jobs/:id`, which already branches on phase), but
+  the upload-section indicators (progress bars, "Using cached ✓" labels)
+  aren't retroactively updated to match the job you switched to — cosmetic
+  only, doesn't affect functionality.
+
 ## Running it
 
 ```bash
