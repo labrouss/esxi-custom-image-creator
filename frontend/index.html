@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ESXi Custom Image Builder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --panel: #151922;
+      --panel-border: #262d3a;
+      --text: #e6e9ef;
+      --text-dim: #8b93a3;
+      --accent: #5b8cff;
+      --accent-hover: #7ba1ff;
+      --danger: #ff6b6b;
+      --success: #3ddc84;
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: "Segoe UI", -apple-system, Roboto, sans-serif;
+      max-width: 1100px;
+      margin: 48px auto;
+      padding: 0 20px 60px;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .two-col {
+      display: flex;
+      align-items: stretch;
+      gap: 20px;
+    }
+    .two-col > fieldset {
+      flex: 1;
+      min-width: 0;
+      margin-bottom: 0;
+    }
+    @media (max-width: 800px) {
+      .two-col { flex-direction: column; }
+      .two-col > fieldset { width: 100%; }
+    }
+
+    .selection-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .selection-count {
+      font-size: 0.85rem;
+      color: var(--accent);
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    h1::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent);
+    }
+
+    fieldset {
+      border: 1px solid var(--panel-border);
+      background: var(--panel);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 18px;
+      transition: opacity 0.2s ease;
+    }
+    fieldset[disabled], fieldset.hidden { display: none; }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    input[type="file"] {
+      display: block;
+      width: 100%;
+      margin-bottom: 14px;
+      padding: 10px;
+      background: #0f131b;
+      border: 1px dashed var(--panel-border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+    input[type="file"]::file-selector-button {
+      background: var(--panel-border);
+      color: var(--text);
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      margin-right: 10px;
+      cursor: pointer;
+    }
+
+    button {
+      background: var(--accent);
+      color: #0b0d12;
+      border: none;
+      padding: 11px 20px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:active:not(:disabled) { transform: scale(0.98); }
+    button:disabled { background: #2a3040; color: var(--text-dim); cursor: not-allowed; }
+
+    button.secondary {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--panel-border);
+      padding: 6px 14px;
+      font-size: 0.82rem;
+    }
+    button.secondary:hover:not(:disabled) { border-color: var(--accent); background: rgba(91, 140, 255, 0.08); }
+    button.secondary.danger { color: var(--danger); }
+    button.secondary.danger:hover:not(:disabled) { border-color: var(--danger); background: rgba(255, 107, 107, 0.08); }
+
+    .reuse-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--panel-border);
+    }
+    .reuse-label {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+    .reuse-row select {
+      flex: 1;
+      min-width: 0;
+      background: #0f131b;
+      color: var(--text);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 7px 8px;
+      font-size: 0.82rem;
+    }
+
+    #log {
+      background: #060709;
+      color: #6be08a;
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 0.8rem;
+      padding: 14px;
+      border-radius: var(--radius);
+      height: 170px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      border: 1px solid var(--panel-border);
+    }
+
+    .select-all-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .select-all-row button {
+      padding: 5px 12px;
+      font-size: 0.78rem;
+    }
+
+    #package-list {
+      max-height: 360px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .package-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 4px;
+      border-bottom: 1px solid var(--panel-border);
+      font-size: 0.9rem;
+    }
+    .package-row:last-child { border-bottom: none; }
+    .package-row label {
+      text-transform: none;
+      font-weight: 400;
+      font-size: 0.9rem;
+      color: var(--text);
+      margin: 0;
+      letter-spacing: normal;
+    }
+
+    input[type="checkbox"] {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border: 1.5px solid var(--panel-border);
+      border-radius: 5px;
+      background: #0f131b;
+      cursor: pointer;
+      position: relative;
+      flex-shrink: 0;
+    }
+    input[type="checkbox"]:checked {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    input[type="checkbox"]:checked::after {
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: 1px;
+      width: 5px;
+      height: 10px;
+      border: solid #0b0d12;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 8px;
+      background: #0f131b;
+      border: 1px solid var(--panel-border);
+      border-radius: 999px;
+      margin-top: 10px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+      border-radius: 999px;
+      transition: width 0.15s ease;
+    }
+    .progress-label {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      margin-top: 6px;
+    }
+
+    .progress-track.indeterminate {
+      position: relative;
+    }
+    .indeterminate-fill {
+      position: absolute;
+      width: 35%;
+      animation: indeterminate-slide 1.3s ease-in-out infinite;
+    }
+    @keyframes indeterminate-slide {
+      0% { left: -35%; }
+      100% { left: 100%; }
+    }
+
+    .hidden { display: none !important; }
+
+    .error {
+      color: var(--danger);
+      font-weight: 600;
+      background: rgba(255, 107, 107, 0.1);
+      border: 1px solid rgba(255, 107, 107, 0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+    }
+
+    #download-section p {
+      color: var(--success);
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+    #download-section a { margin-right: 10px; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <h1>ESXi Custom Image Builder</h1>
+  <p style="color: var(--text-dim); margin-top: -16px; margin-bottom: 8px; font-size: 0.9rem;">
+    Upload, inject drivers, export &mdash; no manual PowerCLI session needed.
+  </p>
+  <div style="margin-bottom: 28px;">
+    <button type="button" id="startOverTopBtn">Start Over</button>
+  </div>
+
+  <div class="two-col">
+  <fieldset id="upload-section">
+    <label for="baseImage">Base ESXi depot (offline-bundle .zip)</label>
+    <input type="file" id="baseImage" accept=".zip,.iso" />
+    <button id="uploadBaseBtn" style="margin-top:6px;">Upload Base Image</button>
+    <div class="progress-track hidden" id="baseProgressTrack">
+      <div class="progress-fill" id="baseProgressFill"></div>
+    </div>
+    <div class="progress-label hidden" id="baseProgressLabel"></div>
+
+    <div class="reuse-row" id="baseReuseRow">
+      <span class="reuse-label">or reuse cached:</span>
+      <select id="baseReuseSelect"><option value="">Loading...</option></select>
+      <button id="baseReuseBtn" class="secondary">Use</button>
+      <button id="baseDeleteBtn" class="secondary danger" title="Delete selected cached entry">Delete</button>
+    </div>
+
+    <label for="driverIso" style="margin-top:22px;">Driver source (SPP / SSP .iso)</label>
+    <input type="file" id="driverIso" accept=".iso" />
+    <button id="uploadDriverBtn" style="margin-top:6px;">Upload Driver ISO</button>
+    <div class="progress-track hidden" id="driverProgressTrack">
+      <div class="progress-fill" id="driverProgressFill"></div>
+    </div>
+    <div class="progress-label hidden" id="driverProgressLabel"></div>
+
+    <div class="reuse-row" id="driverReuseRow">
+      <span class="reuse-label">or reuse cached:</span>
+      <select id="driverReuseSelect"><option value="">Loading...</option></select>
+      <button id="driverReuseBtn" class="secondary">Use</button>
+      <button id="driverDeleteBtn" class="secondary danger" title="Delete selected cached entry">Delete</button>
+    </div>
+  </fieldset>
+
+  <fieldset id="selection-section">
+    <div class="selection-header">
+      <label style="margin-bottom:0;">Select drivers to include</label>
+      <span class="selection-count" id="selectionCount"></span>
+    </div>
+    <div class="select-all-row hidden" id="selectAllRow">
+      <button type="button" id="selectAllBtn" class="secondary">Select All</button>
+      <button type="button" id="selectNoneBtn" class="secondary">Select None</button>
+    </div>
+    <p id="packagePlaceholder" style="color: var(--text-dim); font-size: 0.85rem;">
+      Waiting for both files to upload and be scanned — available drivers will appear here.
+    </p>
+    <div id="package-list"></div>
+
+    <label style="margin-top:16px;">Export format(s)</label>
+    <div class="package-row">
+      <input type="checkbox" id="formatIso" value="iso" checked />
+      <label for="formatIso" style="font-weight:normal; margin:0;">Bootable ISO</label>
+    </div>
+    <div class="package-row">
+      <input type="checkbox" id="formatBundle" value="bundle" />
+      <label for="formatBundle" style="font-weight:normal; margin:0;">vLCM offline bundle (.zip)</label>
+    </div>
+
+    <div style="margin-top:12px;">
+      <button id="buildBtn" disabled>Build Custom Image</button>
+    </div>
+
+    <div class="progress-track indeterminate hidden" id="buildProgressTrack">
+      <div class="progress-fill indeterminate-fill" id="buildProgressFill"></div>
+    </div>
+    <div class="progress-label hidden" id="buildProgressLabel"></div>
+  </fieldset>
+  </div>
+
+  <fieldset id="download-section" class="hidden">
+    <p>Your custom image is ready.</p>
+    <a id="downloadIsoLink" href="#" class="hidden"><button>Download ISO</button></a>
+    <a id="downloadBundleLink" href="#" class="hidden" style="margin-left:8px;"><button>Download vLCM Bundle</button></a>
+    <div style="margin-top:14px;">
+      <button id="startOverBtn" class="secondary">Start Over</button>
+    </div>
+  </fieldset>
+
+  <p id="errorMsg" class="error hidden"></p>
+  <button id="startOverErrorBtn" class="secondary hidden" style="margin-bottom:16px;">Start Over</button>
+
+  <div id="log"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

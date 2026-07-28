@@ -1,0 +1,11 @@
+services:
+  esxi-image-builder:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - esxi-data:/data
+    restart: unless-stopped
+
+volumes:
+  esxi-data:
