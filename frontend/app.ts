@@ -215,7 +215,10 @@ function renderPackages(packages: CandidatePackage[]) {
       rowIdx++;
     } else {
       // Multiple versions of the same driver: radio group, highest version
-      // (per the heuristic comparator above) checked by default.
+      // (per the heuristic comparator above) checked by default. A radio
+      // can't be natively unchecked once one's selected, so an explicit
+      // "don't include this driver" option is added to the same group —
+      // otherwise there'd be no way to fully exclude a grouped driver.
       const sorted = [...versions].sort((x, y) => compareVibVersions(y.version, x.version));
       const groupName = `group-${name.replace(/[^A-Za-z0-9_-]/g, "_")}`;
 
@@ -233,6 +236,18 @@ function renderPackages(packages: CandidatePackage[]) {
         wrapper.appendChild(row);
         rowIdx++;
       });
+
+      const excludeRow = document.createElement("div");
+      excludeRow.className = "package-row";
+      excludeRow.innerHTML = `
+        <input type="radio" name="${groupName}" id="pkg-${rowIdx}" data-exclude="true" />
+        <label for="pkg-${rowIdx}" style="font-weight:normal; margin:0; color: var(--text-dim); font-style: italic;">
+          Don't include ${name}
+        </label>
+      `;
+      wrapper.appendChild(excludeRow);
+      rowIdx++;
+
       packageList.appendChild(wrapper);
     }
   }
@@ -243,21 +258,23 @@ function renderPackages(packages: CandidatePackage[]) {
 const selectionCountEl = document.getElementById("selectionCount")!;
 
 function updateSelectionCount() {
-  const names = new Set(
-    Array.from(packageList.querySelectorAll("input[type=checkbox], input[type=radio]")).map(
-      (el) => (el as HTMLInputElement).dataset.name
-    )
+  const allInputs = Array.from(
+    packageList.querySelectorAll("input[type=checkbox], input[type=radio]")
+  ) as HTMLInputElement[];
+
+  // Group membership is driven by shared "name" attribute for radios, and by
+  // individual checkboxes for single-version drivers — "exclude" options
+  // carry no data-name, so they naturally don't count as a distinct driver.
+  const groupKeys = new Set(
+    allInputs.map((el) => (el.type === "radio" ? el.name : el.dataset.name)).filter(Boolean)
   );
-  const total = names.size;
+  const total = groupKeys.size;
   if (total === 0) {
     selectionCountEl.textContent = "";
     return;
   }
-  const selectedNames = new Set(
-    Array.from(packageList.querySelectorAll("input[type=checkbox]:checked, input[type=radio]:checked")).map(
-      (el) => (el as HTMLInputElement).dataset.name
-    )
-  );
+
+  const selectedNames = new Set(allInputs.filter((el) => el.checked && el.dataset.name).map((el) => el.dataset.name));
   selectionCountEl.textContent = `${selectedNames.size}/${total} selected`;
 }
 
@@ -269,14 +286,19 @@ packageList.addEventListener("change", (e) => {
 });
 
 document.getElementById("selectAllBtn")?.addEventListener("click", () => {
-  // Only meaningful for single-version drivers — a radio group always has
-  // exactly one version selected by design.
   packageList.querySelectorAll("input[type=checkbox]").forEach((el) => ((el as HTMLInputElement).checked = true));
+  // Re-select the highest version (rendered first) in every group, undoing any "exclude" choice.
+  packageList.querySelectorAll(".package-group").forEach((group) => {
+    const firstVersionRadio = group.querySelector('input[type=radio]:not([data-exclude])') as HTMLInputElement | null;
+    if (firstVersionRadio) firstVersionRadio.checked = true;
+  });
   updateSelectionCount();
 });
 
 document.getElementById("selectNoneBtn")?.addEventListener("click", () => {
   packageList.querySelectorAll("input[type=checkbox]").forEach((el) => ((el as HTMLInputElement).checked = false));
+  // Fully deselect every grouped driver via its "exclude" option.
+  packageList.querySelectorAll("input[data-exclude]").forEach((el) => ((el as HTMLInputElement).checked = true));
   updateSelectionCount();
 });
 
@@ -286,12 +308,12 @@ interface SelectedPackage {
 }
 
 function getSelectedPackages(): SelectedPackage[] {
-  return Array.from(packageList.querySelectorAll("input[type=checkbox]:checked, input[type=radio]:checked")).map(
-    (el) => ({
+  return Array.from(packageList.querySelectorAll("input[type=checkbox]:checked, input[type=radio]:checked"))
+    .filter((el) => (el as HTMLInputElement).dataset.name)
+    .map((el) => ({
       name: (el as HTMLInputElement).dataset.name!,
       version: (el as HTMLInputElement).dataset.version!,
-    })
-  );
+    }));
 }
 
 async function poll(jobId: string) {

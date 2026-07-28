@@ -54,15 +54,27 @@ try {
   Write-Progress-Line "Adding base depot: $BaseDepotPath"
   Add-EsxSoftwareDepot -DepotUrl $BaseDepotPath | Out-Null
 
+  # Check what the base depot exposes in isolation, before any driver depots are
+  # layered in — this is the fastest way to tell "wrong file uploaded as base"
+  # (e.g. an add-on/components bundle instead of a genuine ESXi base depot,
+  # which exposes zero image profiles) apart from other failure modes.
+  $baseOnlyProfiles = Get-EsxImageProfile
+  Write-Progress-Line "Base depot exposes $($baseOnlyProfiles.Count) image profile(s)$(if ($baseOnlyProfiles.Count -gt 0) { ": $($baseOnlyProfiles.Name -join ', ')" })"
+
   foreach ($f in $DriverDepotFiles) {
     Write-Progress-Line "Adding driver depot: $f"
     Add-EsxSoftwareDepot -DepotUrl $f | Out-Null
   }
 
   Write-Progress-Line "Looking up base image profile..."
-  $base = Get-EsxImageProfile | Where-Object { $_.Name -match "standard" } | Select-Object -First 1
+  $allProfiles = Get-EsxImageProfile
+  $base = $allProfiles | Where-Object { $_.Name -match "standard" } | Select-Object -First 1
   if (-not $base) {
-    throw "No 'standard' image profile found in the base depot. Check that the base ESXi depot zip was uploaded (not just the install ISO)."
+    if ($allProfiles.Count -eq 0) {
+      throw "No image profiles were found in any loaded depot (base or driver). This almost always means the base file isn't a genuine ESXi offline-bundle depot — it may be an add-on/components bundle (which carries VIBs but no image profiles) rather than the base ESXi depot zip. Genuine base depot zips are named like 'VMware-ESXi-8.0U3-<build>-depot.zip' from Broadcom's support portal; double-check the file you uploaded against that."
+    } else {
+      throw "No profile matching 'standard' found. $($allProfiles.Count) profile(s) were visible: $($allProfiles.Name -join ', '). The base depot may use a non-standard profile naming convention — check this list and adjust the match pattern in build-image.ps1 if needed."
+    }
   }
 
   $newProfileName = "$($base.Name)-$ProfileSuffix"
