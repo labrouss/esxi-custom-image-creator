@@ -23,7 +23,7 @@ jobs:
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           echo "tag=esxi-image-builder:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "filename=esxi-image-builder-${SHORT_SHA}.tar" >> "$GITHUB_OUTPUT"
+          echo "filename=esxi-image-builder-${SHORT_SHA}.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Build image
         uses: docker/build-push-action@v6
@@ -35,8 +35,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Save image to a tarball
-        run: docker save -o ${{ steps.vars.outputs.filename }} ${{ steps.vars.outputs.tag }}
+      - name: Save image to a compressed tarball
+        run: docker save ${{ steps.vars.outputs.tag }} | gzip > ${{ steps.vars.outputs.filename }}
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4

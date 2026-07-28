@@ -217,7 +217,7 @@ built image as a downloadable `.tar` artifact (via `docker save` +
 the artifact from the workflow run, then load it locally with:
 
 ```bash
-docker load -i esxi-image-builder-<short-sha>.tar
+docker load -i esxi-image-builder-<short-sha>.tar.gz
 ```
 
 ## License
