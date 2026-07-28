@@ -1,12 +1,63 @@
 import { Router } from "express";
+import * as fs from "fs";
 import * as path from "path";
 import { getJob, updateJob, appendLog } from "../services/jobManager";
 import { buildImage } from "../services/powercli";
 
 const DATA_DIR = process.env.DATA_DIR || "/data";
 const OUTPUT_DIR = path.join(DATA_DIR, "output");
+fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
 const router = Router();
+
+function isSafeOutputFilename(name: string): boolean {
+  // Must be a bare filename (no path separators / traversal) ending in .iso or .zip.
+  return (
+    path.basename(name) === name &&
+    /^[A-Za-z0-9._-]+\.(iso|zip)$/i.test(name)
+  );
+}
+
+// --- List previously built outputs (declared before "/:id" so it isn't swallowed by it) ---
+router.get("/outputs", (_req, res) => {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(OUTPUT_DIR, { withFileTypes: true });
+  } catch {
+    return res.json([]);
+  }
+
+  const outputs = entries
+    .filter((e) => e.isFile() && /\.(iso|zip)$/i.test(e.name))
+    .map((e) => {
+      const stat = fs.statSync(path.join(OUTPUT_DIR, e.name));
+      return { filename: e.name, sizeBytes: stat.size, createdAt: stat.mtime.toISOString() };
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  res.json(outputs);
+});
+
+router.get("/outputs/:filename/download", (req, res) => {
+  const { filename } = req.params;
+  if (!isSafeOutputFilename(filename)) return res.status(400).json({ error: "Invalid filename." });
+  const filePath = path.join(OUTPUT_DIR, filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found." });
+  res.download(filePath);
+});
+
+router.delete("/outputs/:filename", async (req, res) => {
+  const { filename } = req.params;
+  if (!isSafeOutputFilename(filename)) return res.status(400).json({ error: "Invalid filename." });
+  const filePath = path.join(OUTPUT_DIR, filename);
+  try {
+    await fs.promises.unlink(filePath);
+    res.json({ status: "deleted" });
+  } catch (err: any) {
+    if (err.code === "ENOENT") return res.status(404).json({ error: "File not found." });
+    res.status(500).json({ error: err.message ?? String(err) });
+  }
+});
 
 router.get("/:id", (req, res) => {
   const job = getJob(req.params.id);

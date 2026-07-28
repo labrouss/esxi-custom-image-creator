@@ -72,6 +72,11 @@ and UI on top of it.
    so it's clear which SSP drove a given build, alongside a short job-id
    prefix for uniqueness.
 
+A **"Previously built images"** section below the main panels lists every
+ISO/bundle sitting in `/data/output`, with a Download and a Delete button
+per entry — useful for cleaning up old builds or grabbing one from an
+earlier session without digging through the container's filesystem.
+
 ## Running it
 
 ```bash

@@ -177,6 +177,7 @@ async function poll(jobId: string) {
       downloadBundleLink.href = `/api/jobs/${jobId}/download/bundle`;
       downloadBundleLink.classList.remove("hidden");
     }
+    loadOutputsList();
     return;
   }
 }
@@ -281,6 +282,70 @@ async function loadCacheLists() {
   }
 }
 loadCacheLists();
+
+interface OutputEntry {
+  filename: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+const outputsPlaceholder = document.getElementById("outputsPlaceholder")!;
+const outputsList = document.getElementById("outputsList")!;
+
+function renderOutputsList(entries: OutputEntry[]) {
+  if (entries.length === 0) {
+    outputsPlaceholder.classList.remove("hidden");
+    outputsList.innerHTML = "";
+    return;
+  }
+  outputsPlaceholder.classList.add("hidden");
+  outputsList.innerHTML = entries
+    .map((e) => {
+      const date = new Date(e.createdAt).toLocaleString();
+      return `
+        <div class="output-row">
+          <span class="output-name" title="${e.filename}">${e.filename}</span>
+          <span class="output-meta">${formatSize(e.sizeBytes)} — ${date}</span>
+          <a href="/api/jobs/outputs/${encodeURIComponent(e.filename)}/download">
+            <button type="button" class="secondary">Download</button>
+          </a>
+          <button type="button" class="secondary danger" data-filename="${e.filename}" data-action="delete-output">Delete</button>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+async function loadOutputsList() {
+  try {
+    const res = await fetch("/api/jobs/outputs");
+    const entries: OutputEntry[] = await res.json();
+    renderOutputsList(entries);
+  } catch {
+    renderOutputsList([]);
+  }
+}
+loadOutputsList();
+
+outputsList.addEventListener("click", async (e) => {
+  const target = (e.target as HTMLElement)?.closest('[data-action="delete-output"]') as HTMLButtonElement | null;
+  if (!target) return;
+  const filename = target.dataset.filename!;
+  if (!confirm(`Delete this built image?\n\n${filename}\n\nThis cannot be undone.`)) return;
+
+  target.disabled = true;
+  try {
+    const res = await fetch(`/api/jobs/outputs/${encodeURIComponent(filename)}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Failed to delete output");
+    }
+    await loadOutputsList();
+  } catch (err: any) {
+    showError(err.message);
+    target.disabled = false;
+  }
+});
 
 async function deleteCachedEntry(kind: "base" | "driver", hash: string): Promise<void> {
   const res = await fetch(`/api/upload/cache/${kind}/${hash}`, { method: "DELETE" });
