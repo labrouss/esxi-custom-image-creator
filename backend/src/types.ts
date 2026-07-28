@@ -30,7 +30,7 @@ export interface JobState {
   driverReady?: boolean;
   candidateDepotFiles?: string[]; // zip/vib files found & successfully loaded as depots
   candidatePackages?: CandidatePackage[];
-  selectedVibNames?: string[];
+  selectedPackages?: { name: string; version: string }[];
   exportFormats?: ExportFormat[];
   outputIsoPath?: string;
   outputBundlePath?: string;

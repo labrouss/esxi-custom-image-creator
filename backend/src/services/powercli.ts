@@ -68,7 +68,7 @@ export function buildImage(
   opts: {
     baseDepotPath: string;
     driverDepotFiles: string[];
-    selectedPackageNames: string[];
+    selectedPackages: { name: string; version: string }[];
     exportFormats: ("iso" | "bundle")[];
     outputIsoPath?: string;
     outputBundlePath?: string;
@@ -80,8 +80,8 @@ export function buildImage(
     opts.baseDepotPath,
     "-DriverDepotFilesJson",
     JSON.stringify(opts.driverDepotFiles),
-    "-SelectedPackageNamesJson",
-    JSON.stringify(opts.selectedPackageNames),
+    "-SelectedPackagesJson",
+    JSON.stringify(opts.selectedPackages),
     "-ExportFormatsJson",
     JSON.stringify(opts.exportFormats),
   ];

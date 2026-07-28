@@ -81,12 +81,15 @@ router.post("/:id/build", async (req, res) => {
     return res.status(409).json({ error: `Job is in phase '${job.phase}', not ready to build.` });
   }
 
-  const { selectedPackageNames, exportFormats } = req.body as {
-    selectedPackageNames: string[];
+  const { selectedPackages, exportFormats } = req.body as {
+    selectedPackages: { name: string; version: string }[];
     exportFormats?: ("iso" | "bundle")[];
   };
-  if (!Array.isArray(selectedPackageNames) || selectedPackageNames.length === 0) {
-    return res.status(400).json({ error: "selectedPackageNames must be a non-empty array." });
+  if (!Array.isArray(selectedPackages) || selectedPackages.length === 0) {
+    return res.status(400).json({ error: "selectedPackages must be a non-empty array." });
+  }
+  if (selectedPackages.some((p) => !p || typeof p.name !== "string" || typeof p.version !== "string")) {
+    return res.status(400).json({ error: "Each selectedPackages entry needs a name and version." });
   }
   const formats: ("iso" | "bundle")[] =
     exportFormats && exportFormats.length > 0 ? exportFormats : ["iso"];
@@ -103,7 +106,7 @@ router.post("/:id/build", async (req, res) => {
     });
   }
 
-  updateJob(job.id, { phase: "building", selectedVibNames: selectedPackageNames, exportFormats: formats });
+  updateJob(job.id, { phase: "building", selectedPackages, exportFormats: formats });
   res.json({ status: "building" });
 
   (async () => {
@@ -119,14 +122,16 @@ router.post("/:id/build", async (req, res) => {
 
       appendLog(
         job.id,
-        `Building image (${formats.join(" + ")}) with packages: ${selectedPackageNames.join(", ")}`
+        `Building image (${formats.join(" + ")}) with packages: ${selectedPackages
+          .map((p) => `${p.name}@${p.version}`)
+          .join(", ")}`
       );
 
       const result = await buildImage(
         {
           baseDepotPath: job.baseImagePath!,
           driverDepotFiles: job.candidateDepotFiles ?? [],
-          selectedPackageNames,
+          selectedPackages,
           exportFormats: formats as ("iso" | "bundle")[],
           outputIsoPath,
           outputBundlePath,

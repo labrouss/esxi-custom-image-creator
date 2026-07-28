@@ -159,44 +159,118 @@ function renderLog(lines: string[]) {
 const packagePlaceholder = document.getElementById("packagePlaceholder")!;
 const selectAllRow = document.getElementById("selectAllRow")!;
 
+/**
+ * Best-effort VIB version comparator: splits on '.' and '-' and compares
+ * segment by segment, numerically when both sides of a segment are pure
+ * digits, lexically otherwise. VIB version strings mix numeric and
+ * alphanumeric segments (e.g. "2.1.34.0-1OEM.700.1.0.15843807"), so this
+ * isn't a guaranteed-correct semver comparison — it's a heuristic for
+ * picking a sensible default radio selection. The person can always
+ * override it by clicking the other version's radio button.
+ */
+function compareVibVersions(a: string, b: string): number {
+  const segsA = a.split(/[.-]/);
+  const segsB = b.split(/[.-]/);
+  const len = Math.max(segsA.length, segsB.length);
+  for (let i = 0; i < len; i++) {
+    const sa = segsA[i] ?? "";
+    const sb = segsB[i] ?? "";
+    const na = /^\d+$/.test(sa) ? parseInt(sa, 10) : null;
+    const nb = /^\d+$/.test(sb) ? parseInt(sb, 10) : null;
+    if (na !== null && nb !== null) {
+      if (na !== nb) return na - nb;
+    } else if (sa !== sb) {
+      return sa < sb ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
 function renderPackages(packages: CandidatePackage[]) {
   packagePlaceholder.classList.add("hidden");
   selectAllRow.classList.remove("hidden");
   packageList.innerHTML = "";
-  packages.forEach((pkg, idx) => {
-    const row = document.createElement("div");
-    row.className = "package-row";
-    row.innerHTML = `
-      <input type="checkbox" id="pkg-${idx}" value="${pkg.name}" checked />
-      <label for="pkg-${idx}" style="font-weight:normal; margin:0;">
-        ${pkg.name} <span style="color:#888;">(${pkg.vendor}, v${pkg.version})</span>
-      </label>
-    `;
-    packageList.appendChild(row);
-  });
+
+  // Group by driver name — an offline bundle can carry multiple versions of
+  // the same VIB (e.g. from different SSP releases layered together).
+  const groups = new Map<string, CandidatePackage[]>();
+  for (const pkg of packages) {
+    if (!groups.has(pkg.name)) groups.set(pkg.name, []);
+    groups.get(pkg.name)!.push(pkg);
+  }
+
+  let rowIdx = 0;
+  for (const [name, versions] of groups) {
+    if (versions.length === 1) {
+      const pkg = versions[0];
+      const row = document.createElement("div");
+      row.className = "package-row";
+      row.innerHTML = `
+        <input type="checkbox" id="pkg-${rowIdx}" data-name="${pkg.name}" data-version="${pkg.version}" checked />
+        <label for="pkg-${rowIdx}" style="font-weight:normal; margin:0;">
+          ${pkg.name} <span style="color:#888;">(${pkg.vendor}, v${pkg.version})</span>
+        </label>
+      `;
+      packageList.appendChild(row);
+      rowIdx++;
+    } else {
+      // Multiple versions of the same driver: radio group, highest version
+      // (per the heuristic comparator above) checked by default.
+      const sorted = [...versions].sort((x, y) => compareVibVersions(y.version, x.version));
+      const groupName = `group-${name.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "package-group";
+      sorted.forEach((pkg, i) => {
+        const row = document.createElement("div");
+        row.className = "package-row";
+        row.innerHTML = `
+          <input type="radio" name="${groupName}" id="pkg-${rowIdx}" data-name="${pkg.name}" data-version="${pkg.version}" ${i === 0 ? "checked" : ""} />
+          <label for="pkg-${rowIdx}" style="font-weight:normal; margin:0;">
+            ${pkg.name} <span style="color:#888;">(${pkg.vendor}, v${pkg.version})</span>
+          </label>
+        `;
+        wrapper.appendChild(row);
+        rowIdx++;
+      });
+      packageList.appendChild(wrapper);
+    }
+  }
+
   updateSelectionCount();
 }
 
 const selectionCountEl = document.getElementById("selectionCount")!;
 
 function updateSelectionCount() {
-  const total = packageList.querySelectorAll("input[type=checkbox]").length;
+  const names = new Set(
+    Array.from(packageList.querySelectorAll("input[type=checkbox], input[type=radio]")).map(
+      (el) => (el as HTMLInputElement).dataset.name
+    )
+  );
+  const total = names.size;
   if (total === 0) {
     selectionCountEl.textContent = "";
     return;
   }
-  const selected = packageList.querySelectorAll("input[type=checkbox]:checked").length;
-  selectionCountEl.textContent = `${selected}/${total} selected`;
+  const selectedNames = new Set(
+    Array.from(packageList.querySelectorAll("input[type=checkbox]:checked, input[type=radio]:checked")).map(
+      (el) => (el as HTMLInputElement).dataset.name
+    )
+  );
+  selectionCountEl.textContent = `${selectedNames.size}/${total} selected`;
 }
 
-// Delegated listener: covers all checkboxes, including ones added after a re-render.
+// Delegated listener: covers all checkboxes/radios, including ones added after a re-render.
 packageList.addEventListener("change", (e) => {
-  if ((e.target as HTMLElement)?.matches('input[type="checkbox"]')) {
+  if ((e.target as HTMLElement)?.matches('input[type="checkbox"], input[type="radio"]')) {
     updateSelectionCount();
   }
 });
 
 document.getElementById("selectAllBtn")?.addEventListener("click", () => {
+  // Only meaningful for single-version drivers — a radio group always has
+  // exactly one version selected by design.
   packageList.querySelectorAll("input[type=checkbox]").forEach((el) => ((el as HTMLInputElement).checked = true));
   updateSelectionCount();
 });
@@ -206,9 +280,17 @@ document.getElementById("selectNoneBtn")?.addEventListener("click", () => {
   updateSelectionCount();
 });
 
-function getSelectedPackageNames(): string[] {
-  return Array.from(packageList.querySelectorAll("input[type=checkbox]:checked")).map(
-    (el) => (el as HTMLInputElement).value
+interface SelectedPackage {
+  name: string;
+  version: string;
+}
+
+function getSelectedPackages(): SelectedPackage[] {
+  return Array.from(packageList.querySelectorAll("input[type=checkbox]:checked, input[type=radio]:checked")).map(
+    (el) => ({
+      name: (el as HTMLInputElement).dataset.name!,
+      version: (el as HTMLInputElement).dataset.version!,
+    })
   );
 }
 
@@ -677,8 +759,8 @@ buildBtn.addEventListener("click", async () => {
   clearError();
   if (!currentJobId) return;
 
-  const selectedPackageNames = getSelectedPackageNames();
-  if (selectedPackageNames.length === 0) {
+  const selectedPackages = getSelectedPackages();
+  if (selectedPackages.length === 0) {
     showError("Select at least one driver package.");
     return;
   }
@@ -696,7 +778,7 @@ buildBtn.addEventListener("click", async () => {
     const res = await fetch(`/api/jobs/${currentJobId}/build`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ selectedPackageNames, exportFormats }),
+      body: JSON.stringify({ selectedPackages, exportFormats }),
     });
     if (!res.ok) {
       const err = await res.json();

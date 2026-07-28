@@ -1,14 +1,17 @@
 <#
   Loads the base ESXi depot + the driver depot files that were validated in the
   inspect phase, clones the standard image profile, injects the user-selected
-  packages by exact name, and exports a bootable ISO.
+  packages by exact name+version (resolving each to the specific VIB object
+  rather than trusting a bare name, which would be ambiguous when the depot
+  carries multiple versions of the same driver), and exports a bootable ISO
+  and/or vLCM offline bundle.
 
   Output: "###JSON_START###{...}###JSON_END###" with success/error + output path.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$BaseDepotPath,
   [Parameter(Mandatory = $false)][string]$DriverDepotFilesJson = '[]',
-  [Parameter(Mandatory = $true)][string]$SelectedPackageNamesJson,
+  [Parameter(Mandatory = $true)][string]$SelectedPackagesJson,
   [Parameter(Mandatory = $false)][string]$ExportFormatsJson = '["iso"]',
   [Parameter(Mandatory = $false)][string]$OutputIsoPath,
   [Parameter(Mandatory = $false)][string]$OutputBundlePath,
@@ -25,7 +28,7 @@ $ErrorActionPreference = "Stop"
 # forces an array even when the JSON has 0 or 1 elements, since ConvertFrom-Json
 # otherwise returns a bare scalar for those cases.
 $DriverDepotFiles = @($DriverDepotFilesJson | ConvertFrom-Json)
-$SelectedPackageNames = @($SelectedPackageNamesJson | ConvertFrom-Json)
+$SelectedPackages = @($SelectedPackagesJson | ConvertFrom-Json)   # each: { name, version }
 $ExportFormats = @($ExportFormatsJson | ConvertFrom-Json)
 
 function Emit-Result($obj) {
@@ -71,9 +74,19 @@ try {
   Write-Progress-Line "Cloning base profile '$($base.Name)' into '$newProfileName'..."
   New-EsxImageProfile -CloneProfile $base -Name $newProfileName -Vendor "InternalTooling" -AcceptanceLevel PartnerSupported | Out-Null
 
-  if ($SelectedPackageNames.Count -gt 0) {
-    Write-Progress-Line "Injecting $($SelectedPackageNames.Count) package(s): $($SelectedPackageNames -join ', ')"
-    Add-EsxSoftwarePackage -ImageProfile $newProfileName -SoftwarePackage $SelectedPackageNames | Out-Null
+  if ($SelectedPackages.Count -gt 0) {
+    Write-Progress-Line "Resolving $($SelectedPackages.Count) selected package(s) to exact VIB versions..."
+    $resolvedPackages = foreach ($sel in $SelectedPackages) {
+      $match = Get-EsxSoftwarePackage -Name $sel.name | Where-Object { $_.Version -eq $sel.version } | Select-Object -First 1
+      if (-not $match) {
+        throw "Could not find package '$($sel.name)' version '$($sel.version)' in the loaded depots — it may have been in a depot that failed to load, or the version string changed between inspection and build."
+      }
+      $match
+    }
+
+    $labels = ($SelectedPackages | ForEach-Object { "$($_.name)@$($_.version)" }) -join ", "
+    Write-Progress-Line "Injecting $($resolvedPackages.Count) package(s): $labels"
+    Add-EsxSoftwarePackage -ImageProfile $newProfileName -SoftwarePackage $resolvedPackages | Out-Null
   }
 
   $resultIsoPath = $null
