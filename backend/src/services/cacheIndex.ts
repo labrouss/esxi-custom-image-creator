@@ -34,6 +34,10 @@ export function readCacheOriginalName(dir: string): string | undefined {
   return readMeta(dir)?.originalName;
 }
 
+export function recordVibCache(vibCacheDir: string, originalName: string, sizeBytes: number): void {
+  writeMeta(vibCacheDir, { originalName, cachedAt: new Date().toISOString(), sizeBytes });
+}
+
 export interface CachedEntry {
   hash: string;
   originalName: string;
@@ -83,3 +87,6 @@ export function findCachedBaseImageFile(baseCacheDir: string): string | undefine
   const file = entries.find((f) => f !== META_FILENAME);
   return file ? path.join(baseCacheDir, file) : undefined;
 }
+
+/** Same lookup as findCachedBaseImageFile — generic to any single-file cache dir (also used for VIBs). */
+export const findCachedSingleFile = findCachedBaseImageFile;

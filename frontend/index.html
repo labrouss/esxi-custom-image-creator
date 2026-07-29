@@ -337,6 +337,78 @@
       100% { left: 100%; }
     }
 
+    .added-vibs-list { margin-top: 10px; }
+    .added-vib-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      background: rgba(61, 220, 132, 0.06);
+      border: 1px solid rgba(61, 220, 132, 0.25);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-size: 0.82rem;
+    }
+    .added-vib-row .added-vib-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--success);
+    }
+    .added-vib-row button { padding: 3px 9px; font-size: 0.72rem; }
+
+    /* --- Onboarding tour --- */
+    .tour-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 7, 9, 0.72);
+      z-index: 2000;
+    }
+    .tour-highlight-target {
+      position: relative;
+      z-index: 2001;
+      border-radius: 10px;
+      box-shadow: 0 0 0 4px var(--accent), 0 0 40px rgba(91, 140, 255, 0.55);
+      background: var(--panel);
+      transition: box-shadow 0.2s ease;
+    }
+    .tour-tooltip {
+      position: fixed;
+      z-index: 2002;
+      width: 300px;
+      background: var(--panel);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.55);
+    }
+    .tour-progress {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .tour-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .tour-body {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+      margin-bottom: 14px;
+    }
+    .tour-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
     /* --- Toast notifications --- */
     .toast-container {
       position: fixed;
@@ -478,40 +550,81 @@
         </div>
       </div>
     </div>
+    <a href="#" id="showTourLink" style="color: var(--text-dim); font-size: 0.82rem; text-decoration: underline; margin-left: 4px;">Show walkthrough</a>
   </div>
 
   <div id="toastContainer" class="toast-container"></div>
 
+  <div id="tourOverlay" class="tour-overlay hidden">
+    <div id="tourTooltip" class="tour-tooltip">
+      <div class="tour-progress" id="tourProgress">Step 1 of 3</div>
+      <div class="tour-title" id="tourTitle"></div>
+      <div class="tour-body" id="tourBody"></div>
+      <div class="tour-actions">
+        <button type="button" id="tourSkipBtn" class="secondary">Skip</button>
+        <button type="button" id="tourNextBtn">Next</button>
+      </div>
+    </div>
+  </div>
+
   <div class="two-col">
   <fieldset id="upload-section">
-    <label for="baseImage">Base ESXi depot (offline-bundle .zip)</label>
-    <input type="file" id="baseImage" accept=".zip,.iso" />
-    <button id="uploadBaseBtn" style="margin-top:6px;">Upload Base Image</button>
-    <div class="progress-track hidden" id="baseProgressTrack">
-      <div class="progress-fill" id="baseProgressFill"></div>
-    </div>
-    <div class="progress-label hidden" id="baseProgressLabel"></div>
+    <div id="tourStepBase">
+      <label for="baseImage">Base ESXi depot (offline-bundle .zip)</label>
+      <input type="file" id="baseImage" accept=".zip,.iso" />
+      <button id="uploadBaseBtn" style="margin-top:6px;">Upload Base Image</button>
+      <div class="progress-track hidden" id="baseProgressTrack">
+        <div class="progress-fill" id="baseProgressFill"></div>
+      </div>
+      <div class="progress-label hidden" id="baseProgressLabel"></div>
 
-    <div class="reuse-row" id="baseReuseRow">
-      <span class="reuse-label">or reuse cached:</span>
-      <select id="baseReuseSelect"><option value="">Loading...</option></select>
-      <button id="baseReuseBtn" class="secondary">Use</button>
-      <button id="baseDeleteBtn" class="secondary danger" title="Delete selected cached entry">Delete</button>
+      <div class="reuse-row" id="baseReuseRow">
+        <span class="reuse-label">or reuse cached:</span>
+        <select id="baseReuseSelect"><option value="">Loading...</option></select>
+        <button id="baseReuseBtn" class="secondary">Use</button>
+        <button id="baseDeleteBtn" class="secondary danger" title="Delete selected cached entry">Delete</button>
+      </div>
     </div>
 
-    <label for="driverIso" style="margin-top:22px;">Driver source (SPP / SSP .iso)</label>
-    <input type="file" id="driverIso" accept=".iso" />
-    <button id="uploadDriverBtn" style="margin-top:6px;">Upload Driver ISO</button>
-    <div class="progress-track hidden" id="driverProgressTrack">
-      <div class="progress-fill" id="driverProgressFill"></div>
-    </div>
-    <div class="progress-label hidden" id="driverProgressLabel"></div>
+    <div id="tourStepDriverVib">
+      <label for="driverIso" style="margin-top:22px;">Driver source (SPP / SSP .iso) &mdash; optional</label>
+      <input type="file" id="driverIso" accept=".iso" />
+      <button id="uploadDriverBtn" style="margin-top:6px;">Upload Driver ISO</button>
+      <div class="progress-track hidden" id="driverProgressTrack">
+        <div class="progress-fill" id="driverProgressFill"></div>
+      </div>
+      <div class="progress-label hidden" id="driverProgressLabel"></div>
 
-    <div class="reuse-row" id="driverReuseRow">
-      <span class="reuse-label">or reuse cached:</span>
-      <select id="driverReuseSelect"><option value="">Loading...</option></select>
-      <button id="driverReuseBtn" class="secondary">Use</button>
-      <button id="driverDeleteBtn" class="secondary danger" title="Delete selected cached entry">Delete</button>
+      <div class="reuse-row" id="driverReuseRow">
+        <span class="reuse-label">or reuse cached:</span>
+        <select id="driverReuseSelect"><option value="">Loading...</option></select>
+        <button id="driverReuseBtn" class="secondary">Use</button>
+        <button id="driverDeleteBtn" class="secondary danger" title="Delete selected cached entry">Delete</button>
+      </div>
+
+      <label for="vibFile" style="margin-top:22px;">Individual VIB file(s) &mdash; optional, additive</label>
+      <input type="file" id="vibFile" accept=".vib" />
+      <button id="uploadVibBtn" style="margin-top:6px;">Add VIB</button>
+      <div class="progress-track hidden" id="vibProgressTrack">
+        <div class="progress-fill" id="vibProgressFill"></div>
+      </div>
+      <div class="progress-label hidden" id="vibProgressLabel"></div>
+
+      <div class="reuse-row" id="vibReuseRow">
+        <span class="reuse-label">or reuse cached:</span>
+        <select id="vibReuseSelect"><option value="">Loading...</option></select>
+        <button id="vibReuseBtn" class="secondary">Add</button>
+        <button id="vibDeleteBtn" class="secondary danger" title="Delete selected cached entry">Delete</button>
+      </div>
+    </div>
+
+    <div id="addedVibsList" class="added-vibs-list"></div>
+
+    <div id="tourStepAnalyze" style="margin-top:18px;">
+      <button id="analyzeBtn" class="hidden" type="button">Analyze</button>
+      <p id="analyzeHint" style="color: var(--text-dim); font-size: 0.8rem; margin-top: 6px;">
+        Add a base image plus an SPP/SSP and/or at least one VIB, then click Analyze when ready.
+      </p>
     </div>
   </fieldset>
 

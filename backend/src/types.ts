@@ -26,6 +26,7 @@ export interface JobState {
   driverIsoPath?: string;
   driverOriginalName?: string;
   extractDir?: string;
+  vibs?: { path: string; originalName: string; hash: string }[];
   baseReady?: boolean;
   driverReady?: boolean;
   candidateDepotFiles?: string[]; // zip/vib files found & successfully loaded as depots

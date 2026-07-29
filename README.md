@@ -12,30 +12,41 @@ and UI on top of it.
 
 ## How it works
 
-1. **Upload** — the two files upload independently, each with its own
-   progress bar:
-   - Base ESXi **offline-bundle .zip** (from Broadcom support — *not* the
-     plain install ISO; Image Builder needs the depot format, see caveat
-     below)
-   - The HPE **SPP/SSP .iso** containing drivers
+1. **Upload** — each source uploads independently, with its own progress bar:
+   - Base ESXi **offline-bundle .zip** — required (from Broadcom support —
+     *not* the plain install ISO; Image Builder needs the depot format,
+     see caveat below)
+   - The HPE **SPP/SSP .iso** containing drivers — optional
+   - Individual **`.vib`** file(s) — optional, additive; add as many as you
+     like, one at a time, on top of (or instead of) the SPP
 
-   A job is created on the first upload click; both files can be uploaded
-   in either order, and processing (hashing/caching the base image,
-   extracting the SPP/SSP) starts for each as soon as it finishes uploading
-   — you don't have to wait for one before starting the other.
+   A job is created on the first upload click; sources can be uploaded in
+   any order, and processing (hashing/caching the base image, extracting
+   the SPP/SSP, caching each VIB) starts for each as soon as it finishes
+   uploading. **At least one of SPP or a VIB is required** alongside the
+   base image — the tool won't proceed on a bare base image with nothing
+   to inject.
 
    Each upload section also has a **"reuse cached"** dropdown listing
-   previously uploaded base images / extracted SPPs (by original filename
-   and when they were cached) — pick one and click **Use** to skip
-   re-uploading entirely. Useful when building a second custom image from
-   the same sources, or re-running after a failed build. A **Delete** button
-   next to it removes the selected cached entry (with a confirmation prompt)
-   and frees its disk space — handy once a cache directory has grown or an
+   previously uploaded files (by original filename and when they were
+   cached) — pick one and click **Use**/**Add** to skip re-uploading
+   entirely. Useful when building a second custom image from the same
+   sources, or re-running after a failed build. A **Delete** button next to
+   it removes the selected cached entry (with a confirmation prompt) and
+   frees its disk space — handy once a cache directory has grown or an
    entry turns out to be the wrong file (e.g. the plain installer ISO
-   instead of the depot zip).
-2. **Extract & inspect** — the ISO is extracted with `7z` (works without
-   loop-mounting, so no `--privileged` container needed). Discovery of the
-   real depot zips is **manifest-driven**: it reads
+   instead of the depot zip). VIBs already added to the current job show in
+   a running list with their own **Remove** button (detaches from this job
+   only — doesn't delete the cached file).
+2. **Analyze** — once the base image plus at least one driver source is
+   ready, an **Analyze** button appears (replacing a hint text telling you
+   what's still needed). Clicking it is the explicit trigger for
+   extraction/inspection below — nothing runs automatically the moment
+   requirements are met, so you can keep adding more VIBs first without
+   racing an auto-trigger.
+3. **Extract & inspect** — the SPP/SSP (if provided) is extracted with `7z`
+   (works without loop-mounting, so no `--privileged` container needed).
+   Discovery of the real depot zips is **manifest-driven**: it reads
    `manifest/vmw/vmware-addon-depot.txt` inside the extracted SSP, which
    lists the exact depot zip filenames (one per ESXi major version, e.g.
    `HPE-803.x-...-Addon-depot.zip` for 8.0.3, `HPE-902.x-...` for 9.0.2).
@@ -43,6 +54,9 @@ and UI on top of it.
    pulling in firmware/SUM payloads that also happen to be `.zip` files but
    aren't real ESXi depots. If the manifest isn't found (older/different SSP
    layout), it falls back to scanning for every `.zip`/`.vib` in the tree.
+   Any individually-added VIBs are appended to the candidate list
+   regardless — they aren't run through manifest/version filtering, since
+   they were deliberately hand-picked.
 
    On top of that, the tool detects the target ESXi version from your
    **base image's filename** (handles both `8.0.3` and `8.0U3` naming
@@ -52,9 +66,15 @@ and UI on top of it.
    detected, or none of the manifest entries match, it falls back to
    showing everything rather than guessing wrong. Either way, every package
    PowerCLI can actually see afterward is listed in the UI.
-3. **Select** — you tick which packages to include (all pre-checked by
-   default).
-4. **Build** — the backend clones the base `standard` image profile,
+5. **Select** — you tick which packages to include (all pre-checked by
+   default). If the depot(s) carry multiple versions of the same driver
+   (common when a base image, an SPP, and hand-added VIBs overlap), they're
+   grouped together as a radio choice instead of separate checkboxes, with
+   the newer-looking version pre-selected — plus an explicit "don't include
+   this driver" option, since a radio can't be natively unchecked once
+   one's picked. **Select All**/**Select None** and a live "N/M selected"
+   count (counting unique drivers, not raw rows) are also available.
+6. **Build** — the backend clones the base `standard` image profile,
    injects your selected packages by exact name/version, and exports
    whichever format(s) you chose: a bootable **ISO**, a **vLCM offline
    bundle** (`.zip`), or both in the same run. An animated progress bar
@@ -65,7 +85,7 @@ and UI on top of it.
    PowerShell process in real time rather than only appearing once the
    whole build finishes. The full step-by-step output is also visible in
    the log panel below.
-5. **Download** — grab the resulting file(s) from the browser. If you
+7. **Download** — grab the resulting file(s) from the browser. If you
    picked both formats, two download buttons appear. Output filenames
    include a reference to the SPP/SSP source file (e.g.
    `a1b2c3d4-Synergy_Service_Pack_SSP_2026.07.02_Z7550-98164-custom-esxi.iso`)

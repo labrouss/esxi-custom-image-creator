@@ -12,6 +12,12 @@ interface CandidatePackage {
   sourceFile: string;
 }
 
+interface VibEntry {
+  path: string;
+  originalName: string;
+  hash: string;
+}
+
 interface JobState {
   id: string;
   phase: string;
@@ -20,6 +26,9 @@ interface JobState {
   outputIsoPath?: string;
   outputBundlePath?: string;
   error?: string;
+  baseReady?: boolean;
+  driverReady?: boolean;
+  vibs?: VibEntry[];
 }
 
 const uploadSection = document.getElementById("upload-section")!;
@@ -30,18 +39,28 @@ const logEl = document.getElementById("log")!;
 const errorEl = document.getElementById("errorMsg")!;
 const uploadBaseBtn = document.getElementById("uploadBaseBtn") as HTMLButtonElement;
 const uploadDriverBtn = document.getElementById("uploadDriverBtn") as HTMLButtonElement;
+const uploadVibBtn = document.getElementById("uploadVibBtn") as HTMLButtonElement;
 const baseReuseSelect = document.getElementById("baseReuseSelect") as HTMLSelectElement;
 const baseReuseBtn = document.getElementById("baseReuseBtn") as HTMLButtonElement;
 const baseDeleteBtn = document.getElementById("baseDeleteBtn") as HTMLButtonElement;
 const driverReuseSelect = document.getElementById("driverReuseSelect") as HTMLSelectElement;
 const driverReuseBtn = document.getElementById("driverReuseBtn") as HTMLButtonElement;
 const driverDeleteBtn = document.getElementById("driverDeleteBtn") as HTMLButtonElement;
+const vibReuseSelect = document.getElementById("vibReuseSelect") as HTMLSelectElement;
+const vibReuseBtn = document.getElementById("vibReuseBtn") as HTMLButtonElement;
+const vibDeleteBtn = document.getElementById("vibDeleteBtn") as HTMLButtonElement;
 const baseProgressTrack = document.getElementById("baseProgressTrack")!;
 const baseProgressFill = document.getElementById("baseProgressFill")!;
 const baseProgressLabel = document.getElementById("baseProgressLabel")!;
 const driverProgressTrack = document.getElementById("driverProgressTrack")!;
 const driverProgressFill = document.getElementById("driverProgressFill")!;
 const driverProgressLabel = document.getElementById("driverProgressLabel")!;
+const vibProgressTrack = document.getElementById("vibProgressTrack")!;
+const vibProgressFill = document.getElementById("vibProgressFill")!;
+const vibProgressLabel = document.getElementById("vibProgressLabel")!;
+const addedVibsList = document.getElementById("addedVibsList")!;
+const analyzeBtn = document.getElementById("analyzeBtn") as HTMLButtonElement;
+const analyzeHint = document.getElementById("analyzeHint")!;
 const buildBtn = document.getElementById("buildBtn") as HTMLButtonElement;
 const buildProgressTrack = document.getElementById("buildProgressTrack")!;
 const buildProgressLabel = document.getElementById("buildProgressLabel")!;
@@ -50,6 +69,119 @@ const downloadBundleLink = document.getElementById("downloadBundleLink") as HTML
 
 let currentJobId: string | null = null;
 let pollTimer: number | null = null;
+
+// --- Onboarding tour ---
+interface TourStep {
+  targetId: string;
+  title: string;
+  body: string;
+}
+
+const tourSteps: TourStep[] = [
+  {
+    targetId: "tourStepBase",
+    title: "1. Add the base ESXi depot",
+    body: "Upload the offline-bundle .zip (not the plain install ISO), or reuse one you've already cached. This is required.",
+  },
+  {
+    targetId: "tourStepDriverVib",
+    title: "2. Add drivers",
+    body: "Add an SPP/SSP, one or more individual .vib files, or both — at least one is required alongside the base image.",
+  },
+  {
+    targetId: "tourStepAnalyze",
+    title: "3. Analyze",
+    body: "Once the base image plus a driver source are ready, click Analyze to inspect the depot(s) and pick which drivers to include.",
+  },
+];
+
+const tourOverlay = document.getElementById("tourOverlay")!;
+const tourTooltip = document.getElementById("tourTooltip")!;
+const tourProgress = document.getElementById("tourProgress")!;
+const tourTitle = document.getElementById("tourTitle")!;
+const tourBody = document.getElementById("tourBody")!;
+const tourNextBtn = document.getElementById("tourNextBtn") as HTMLButtonElement;
+const tourSkipBtn = document.getElementById("tourSkipBtn") as HTMLButtonElement;
+const TOUR_SEEN_KEY = "esxiBuilderTourSeen";
+
+let tourStepIndex = 0;
+let tourCurrentTarget: HTMLElement | null = null;
+
+function positionTourTooltip() {
+  if (!tourCurrentTarget) return;
+  const rect = tourCurrentTarget.getBoundingClientRect();
+  const tooltipRect = tourTooltip.getBoundingClientRect();
+  const margin = 14;
+
+  let top = rect.bottom + margin;
+  if (top + tooltipRect.height > window.innerHeight - margin) {
+    top = rect.top - tooltipRect.height - margin;
+  }
+  top = Math.max(margin, Math.min(top, window.innerHeight - tooltipRect.height - margin));
+
+  let left = rect.left;
+  left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
+
+  tourTooltip.style.top = `${top}px`;
+  tourTooltip.style.left = `${left}px`;
+}
+
+function showTourStep(index: number) {
+  if (tourCurrentTarget) tourCurrentTarget.classList.remove("tour-highlight-target");
+
+  const step = tourSteps[index];
+  const target = document.getElementById(step.targetId);
+  if (!target) return;
+
+  tourCurrentTarget = target;
+  target.classList.add("tour-highlight-target");
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+
+  tourProgress.textContent = `Step ${index + 1} of ${tourSteps.length}`;
+  tourTitle.textContent = step.title;
+  tourBody.textContent = step.body;
+  tourNextBtn.textContent = index === tourSteps.length - 1 ? "Done" : "Next";
+
+  // Let the smooth scroll settle before measuring position.
+  setTimeout(positionTourTooltip, 350);
+}
+
+function endTour() {
+  if (tourCurrentTarget) tourCurrentTarget.classList.remove("tour-highlight-target");
+  tourCurrentTarget = null;
+  tourOverlay.classList.add("hidden");
+  window.removeEventListener("resize", positionTourTooltip);
+  window.removeEventListener("scroll", positionTourTooltip, true);
+  localStorage.setItem(TOUR_SEEN_KEY, "1");
+}
+
+function startTour() {
+  tourStepIndex = 0;
+  tourOverlay.classList.remove("hidden");
+  showTourStep(tourStepIndex);
+  window.addEventListener("resize", positionTourTooltip);
+  window.addEventListener("scroll", positionTourTooltip, true);
+}
+
+tourNextBtn.addEventListener("click", () => {
+  if (tourStepIndex >= tourSteps.length - 1) {
+    endTour();
+    return;
+  }
+  tourStepIndex++;
+  showTourStep(tourStepIndex);
+});
+
+tourSkipBtn.addEventListener("click", endTour);
+
+document.getElementById("showTourLink")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  startTour();
+});
+
+if (!localStorage.getItem(TOUR_SEEN_KEY)) {
+  setTimeout(startTour, 400);
+}
 
 // --- Toast notifications ---
 const toastContainer = document.getElementById("toastContainer")!;
@@ -316,11 +448,55 @@ function getSelectedPackages(): SelectedPackage[] {
     }));
 }
 
+function renderAddedVibs(vibs: VibEntry[]) {
+  addedVibsList.innerHTML = vibs
+    .map(
+      (v) => `
+        <div class="added-vib-row">
+          <span class="added-vib-name">✓ ${v.originalName}</span>
+          <button type="button" class="secondary danger" data-action="remove-vib" data-hash="${v.hash}">Remove</button>
+        </div>
+      `
+    )
+    .join("");
+}
+
+addedVibsList.addEventListener("click", async (e) => {
+  const btn = (e.target as HTMLElement)?.closest('[data-action="remove-vib"]') as HTMLButtonElement | null;
+  if (!btn || !currentJobId) return;
+  const hash = btn.dataset.hash!;
+  btn.disabled = true;
+  try {
+    await fetch(`/api/upload/${currentJobId}/vib/${hash}`, { method: "DELETE" });
+    await poll(currentJobId);
+  } catch (e: any) {
+    showError(e.message);
+    btn.disabled = false;
+  }
+});
+
+function updateAnalyzeVisibility(job: JobState) {
+  const readyToAnalyze = !!job.baseReady && (!!job.driverReady || (job.vibs?.length ?? 0) > 0);
+  const analysisAlreadyStarted = job.phase !== "uploaded";
+  if (analysisAlreadyStarted) {
+    analyzeBtn.classList.add("hidden");
+    analyzeHint.classList.add("hidden");
+  } else if (readyToAnalyze) {
+    analyzeBtn.classList.remove("hidden");
+    analyzeHint.classList.add("hidden");
+  } else {
+    analyzeBtn.classList.add("hidden");
+    analyzeHint.classList.remove("hidden");
+  }
+}
+
 async function poll(jobId: string) {
   const res = await fetch(`/api/jobs/${jobId}`);
   const job: JobState = await res.json();
   renderLog(job.log ?? []);
   notifyPhaseChange(jobId, job.phase, job.error);
+  renderAddedVibs(job.vibs ?? []);
+  updateAnalyzeVisibility(job);
 
   if (job.phase === "building") {
     buildProgressTrack.classList.remove("hidden");
@@ -535,18 +711,22 @@ function populateReuseSelect(select: HTMLSelectElement, entries: CachedEntry[]) 
 
 async function loadCacheLists() {
   try {
-    const [baseRes, driverRes] = await Promise.all([
+    const [baseRes, driverRes, vibRes] = await Promise.all([
       fetch("/api/upload/cache/base"),
       fetch("/api/upload/cache/driver"),
+      fetch("/api/upload/cache/vib"),
     ]);
     const baseEntries: CachedEntry[] = await baseRes.json();
     const driverEntries: CachedEntry[] = await driverRes.json();
+    const vibEntries: CachedEntry[] = await vibRes.json();
     populateReuseSelect(baseReuseSelect, baseEntries);
     populateReuseSelect(driverReuseSelect, driverEntries);
+    populateReuseSelect(vibReuseSelect, vibEntries);
   } catch {
     // Non-fatal — reuse is a convenience, not required for the tool to work.
     populateReuseSelect(baseReuseSelect, []);
     populateReuseSelect(driverReuseSelect, []);
+    populateReuseSelect(vibReuseSelect, []);
   }
 }
 loadCacheLists();
@@ -615,7 +795,7 @@ outputsList.addEventListener("click", async (e) => {
   }
 });
 
-async function deleteCachedEntry(kind: "base" | "driver", hash: string): Promise<void> {
+async function deleteCachedEntry(kind: "base" | "driver" | "vib", hash: string): Promise<void> {
   const res = await fetch(`/api/upload/cache/${kind}/${hash}`, { method: "DELETE" });
   if (!res.ok) {
     const err = await res.json();
@@ -661,6 +841,25 @@ driverDeleteBtn.addEventListener("click", async () => {
   }
 });
 
+vibDeleteBtn.addEventListener("click", async () => {
+  clearError();
+  const hash = vibReuseSelect.value;
+  if (!hash) return;
+  const label = vibReuseSelect.selectedOptions[0]?.textContent ?? "this cached entry";
+  if (!confirm(`Delete cached VIB?\n\n${label}\n\nThis frees the disk space and removes it from the list.`)) {
+    return;
+  }
+  vibDeleteBtn.disabled = true;
+  try {
+    await deleteCachedEntry("vib", hash);
+    await loadCacheLists();
+  } catch (e: any) {
+    showError(e.message);
+  } finally {
+    vibDeleteBtn.disabled = false;
+  }
+});
+
 baseReuseBtn.addEventListener("click", async () => {
   clearError();
   const hash = baseReuseSelect.value;
@@ -680,6 +879,7 @@ baseReuseBtn.addEventListener("click", async () => {
     }
     uploadBaseBtn.textContent = "Using cached ✓";
     uploadBaseBtn.disabled = true;
+    await poll(jobId);
   } catch (e: any) {
     showError(e.message);
   } finally {
@@ -708,10 +908,36 @@ driverReuseBtn.addEventListener("click", async () => {
     uploadDriverBtn.disabled = true;
     const label = driverReuseSelect.selectedOptions[0]?.textContent?.split(" (")[0];
     if (label) updateTaskLabel(jobId, label);
+    await poll(jobId);
   } catch (e: any) {
     showError(e.message);
   } finally {
     driverReuseBtn.disabled = false;
+  }
+});
+
+vibReuseBtn.addEventListener("click", async () => {
+  clearError();
+  const hash = vibReuseSelect.value;
+  if (!hash) return;
+
+  vibReuseBtn.disabled = true;
+  try {
+    const jobId = await ensureJob();
+    const res = await fetch(`/api/upload/${jobId}/vib/reuse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hash }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Failed to attach cached VIB");
+    }
+    await poll(jobId);
+  } catch (e: any) {
+    showError(e.message);
+  } finally {
+    vibReuseBtn.disabled = false;
   }
 });
 
@@ -735,6 +961,7 @@ uploadBaseBtn.addEventListener("click", async () => {
       baseProgressLabel,
       uploadBaseBtn
     );
+    await poll(jobId);
   } catch (e: any) {
     showError(e.message);
     uploadBaseBtn.disabled = false;
@@ -763,10 +990,53 @@ uploadDriverBtn.addEventListener("click", async () => {
       uploadDriverBtn
     );
     updateTaskLabel(jobId, file.name);
+    await poll(jobId);
   } catch (e: any) {
     showError(e.message);
     uploadDriverBtn.disabled = false;
     uploadDriverBtn.textContent = "Upload Driver ISO";
+  }
+});
+
+uploadVibBtn.addEventListener("click", async () => {
+  clearError();
+  const input = document.getElementById("vibFile") as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) {
+    showError("Choose a .vib file first.");
+    return;
+  }
+
+  try {
+    const jobId = await ensureJob();
+    await uploadWithProgress(jobId, "vib", file, vibProgressTrack, vibProgressFill, vibProgressLabel, uploadVibBtn);
+    // Unlike base/driver, VIBs are additive — re-enable so more can be added.
+    uploadVibBtn.disabled = false;
+    uploadVibBtn.textContent = "Add VIB";
+    input.value = "";
+    await poll(jobId);
+  } catch (e: any) {
+    showError(e.message);
+    uploadVibBtn.disabled = false;
+    uploadVibBtn.textContent = "Add VIB";
+  }
+});
+
+analyzeBtn.addEventListener("click", async () => {
+  clearError();
+  if (!currentJobId) return;
+  analyzeBtn.disabled = true;
+  analyzeBtn.textContent = "Analyzing...";
+  try {
+    const res = await fetch(`/api/upload/${currentJobId}/analyze`, { method: "POST" });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Failed to start analysis");
+    }
+  } catch (e: any) {
+    showError(e.message);
+    analyzeBtn.disabled = false;
+    analyzeBtn.textContent = "Analyze";
   }
 });
 
