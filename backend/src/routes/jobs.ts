@@ -81,9 +81,24 @@ router.post("/:id/build", async (req, res) => {
     return res.status(409).json({ error: `Job is in phase '${job.phase}', not ready to build.` });
   }
 
-  const { selectedPackages, exportFormats } = req.body as {
+  const {
+    selectedPackages,
+    exportFormats,
+    namingMode,
+    customSuffix,
+    creatorMode,
+    customCreator,
+    descriptionMode,
+    customDescription,
+  } = req.body as {
     selectedPackages: { name: string; version: string }[];
     exportFormats?: ("iso" | "bundle")[];
+    namingMode?: "jobid" | "spp" | "date" | "combined" | "manual";
+    customSuffix?: string;
+    creatorMode?: "default" | "manual";
+    customCreator?: string;
+    descriptionMode?: "auto" | "inherit" | "manual";
+    customDescription?: string;
   };
   if (!Array.isArray(selectedPackages) || selectedPackages.length === 0) {
     return res.status(400).json({ error: "selectedPackages must be a non-empty array." });
@@ -95,6 +110,15 @@ router.post("/:id/build", async (req, res) => {
     exportFormats && exportFormats.length > 0 ? exportFormats : ["iso"];
   if (formats.some((f) => f !== "iso" && f !== "bundle")) {
     return res.status(400).json({ error: "exportFormats may only contain 'iso' and/or 'bundle'." });
+  }
+  if (namingMode === "manual" && !customSuffix?.trim()) {
+    return res.status(400).json({ error: "customSuffix is required when namingMode is 'manual'." });
+  }
+  if (creatorMode === "manual" && !customCreator?.trim()) {
+    return res.status(400).json({ error: "customCreator is required when creatorMode is 'manual'." });
+  }
+  if (descriptionMode === "manual" && !customDescription?.trim()) {
+    return res.status(400).json({ error: "customDescription is required when descriptionMode is 'manual'." });
   }
 
   if (job.baseImagePath && !/\.zip$/i.test(job.baseImagePath)) {
@@ -120,6 +144,53 @@ router.post("/:id/build", async (req, res) => {
         ? path.join(OUTPUT_DIR, `${baseName}-bundle.zip`)
         : undefined;
 
+      // Profile name embedded inside the ISO itself (visible via esxcli on a
+      // deployed host, and in \UPGRADE\PROFILE.XML) — separate from the output
+      // filename above, though they share the same short-job-id convention.
+      const now = new Date();
+      const dateStamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+      let profileSuffix: string;
+      switch (namingMode) {
+        case "spp":
+          profileSuffix = job.driverOriginalName ? sanitizeForFilename(job.driverOriginalName) : "Custom";
+          break;
+        case "date":
+          profileSuffix = `Custom-${dateStamp}`;
+          break;
+        case "combined":
+          profileSuffix = `${shortJobId}-${dateStamp}`;
+          break;
+        case "manual":
+          profileSuffix = sanitizeForFilename(customSuffix!.trim());
+          break;
+        case "jobid":
+        default:
+          profileSuffix = shortJobId;
+          break;
+      }
+      appendLog(job.id, `Profile name suffix: "${profileSuffix}" (mode: ${namingMode ?? "jobid"})`);
+
+      const vendor = creatorMode === "manual" ? customCreator!.trim() : "InternalTooling";
+
+      let description: string | undefined;
+      if (descriptionMode === "manual") {
+        description = customDescription!.trim();
+      } else if (descriptionMode === "auto" || !descriptionMode) {
+        const driverSourceLabel = job.driverOriginalName
+          ? job.driverOriginalName
+          : (job.vibs?.length ?? 0) > 0
+            ? "individually added VIB(s) only"
+            : "none";
+        description =
+          `Custom ESXi image built ${dateStamp} via ESXi Custom Image Builder. ` +
+          `Base: ${job.baseOriginalName ?? path.basename(job.baseImagePath ?? "unknown")}. ` +
+          `Driver source: ${driverSourceLabel}. ${selectedPackages.length} driver(s) injected.`;
+      }
+      // descriptionMode === "inherit" leaves `description` undefined, so the
+      // build script doesn't pass -Description and the cloned profile keeps
+      // the base image's original description.
+      appendLog(job.id, `Creator: "${vendor}" | Description mode: ${descriptionMode ?? "auto"}`);
+
       appendLog(
         job.id,
         `Building image (${formats.join(" + ")}) with packages: ${selectedPackages
@@ -135,6 +206,9 @@ router.post("/:id/build", async (req, res) => {
           exportFormats: formats as ("iso" | "bundle")[],
           outputIsoPath,
           outputBundlePath,
+          profileSuffix,
+          vendor,
+          description,
         },
         (line) => appendLog(job.id, line)
       );

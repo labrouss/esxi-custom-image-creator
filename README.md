@@ -97,6 +97,37 @@ ISO/bundle sitting in `/data/output`, with a Download and a Delete button
 per entry — useful for cleaning up old builds or grabbing one from an
 earlier session without digging through the container's filesystem.
 
+## Image profile metadata
+
+A separate full-width section (Export format(s) / Profile name / Creator /
+Description, above "Previously built images") lets you control what gets
+embedded in the image profile itself — visible via `esxcli software
+profile get` on a deployed host, and in `\UPGRADE\PROFILE.XML` inside the
+ISO:
+
+- **Profile name**: five options, each with a live preview —
+  **Job ID** (short id, e.g. `a1b2c3d4`), **SPP / source name** (sanitized
+  SPP filename, falls back to `Custom` if none was uploaded), **Date stamp**
+  (`Custom-YYYYMMDD`), **Job ID + date**, or **Custom** free text. Maps to
+  `New-EsxImageProfile -Name` (as `<base-profile-name>-<suffix>`).
+- **Creator**: **Default** (`InternalTooling`) or a **Custom** free-text
+  value — maps to `-Vendor`. Just a label; doesn't affect validation or
+  behavior.
+- **Description**: **Auto-generated** (default) builds a real provenance
+  string from the actual build — date, base image, driver source, and
+  driver count, e.g. `Custom ESXi image built 2026-07-29 via ESXi Custom
+  Image Builder. Base: VMware-ESXi-8.0U3-24022510-depot.zip. Driver source:
+  Synergy_Service_Pack_SSP_2026.07.02_Z7550-98164.iso. 27 driver(s)
+  injected.` — with a live preview so you see the exact text before
+  building. **Inherit from base image** leaves it alone, keeping whatever
+  generic release description the base ESXi depot itself carries (the only
+  behavior before this option existed). **Custom** lets you write your own.
+
+All three are computed server-side in `jobs.ts` from data the job already
+has (job id, cached original filenames, selected package count) — the
+frontend just renders a preview of what the backend would compute, so what
+you see is what you get.
+
 ## Notifications & job tracking
 
 - **Toasts**: a small pop-up appears top-right for key events — job

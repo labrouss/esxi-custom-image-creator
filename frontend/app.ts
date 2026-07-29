@@ -27,7 +27,9 @@ interface JobState {
   outputBundlePath?: string;
   error?: string;
   baseReady?: boolean;
+  baseOriginalName?: string;
   driverReady?: boolean;
+  driverOriginalName?: string;
   vibs?: VibEntry[];
 }
 
@@ -497,6 +499,9 @@ async function poll(jobId: string) {
   notifyPhaseChange(jobId, job.phase, job.error);
   renderAddedVibs(job.vibs ?? []);
   updateAnalyzeVisibility(job);
+  lastKnownDriverName = job.driverOriginalName ?? null;
+  lastKnownBaseName = job.baseOriginalName ?? null;
+  updateNamingPreviews();
 
   if (job.phase === "building") {
     buildProgressTrack.classList.remove("hidden");
@@ -1047,6 +1052,86 @@ function getSelectedExportFormats(): string[] {
   return formats;
 }
 
+// --- Profile naming preview ---
+const manualSuffixInput = document.getElementById("manualSuffixInput") as HTMLInputElement;
+const namingRadios = Array.from(document.querySelectorAll('input[name="namingMode"]')) as HTMLInputElement[];
+const manualCreatorInput = document.getElementById("manualCreatorInput") as HTMLInputElement;
+const creatorRadios = Array.from(document.querySelectorAll('input[name="creatorMode"]')) as HTMLInputElement[];
+const manualDescriptionInput = document.getElementById("manualDescriptionInput") as HTMLTextAreaElement;
+const descriptionRadios = Array.from(document.querySelectorAll('input[name="descriptionMode"]')) as HTMLInputElement[];
+let lastKnownDriverName: string | null = null;
+let lastKnownBaseName: string | null = null;
+
+/** Mirrors the backend's sanitizeForFilename() so previews match the real output. */
+function sanitizeForPreview(name: string): string {
+  return name
+    .replace(/\.(iso|zip|vib)$/i, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 60);
+}
+
+function getSelectedNamingMode(): string {
+  return namingRadios.find((r) => r.checked)?.value ?? "jobid";
+}
+function getSelectedCreatorMode(): string {
+  return creatorRadios.find((r) => r.checked)?.value ?? "default";
+}
+function getSelectedDescriptionMode(): string {
+  return descriptionRadios.find((r) => r.checked)?.value ?? "auto";
+}
+
+function updateManualInputState() {
+  manualSuffixInput.disabled = getSelectedNamingMode() !== "manual";
+  manualCreatorInput.disabled = getSelectedCreatorMode() !== "manual";
+  manualDescriptionInput.disabled = getSelectedDescriptionMode() !== "manual";
+}
+namingRadios.forEach((r) => r.addEventListener("change", updateManualInputState));
+creatorRadios.forEach((r) => r.addEventListener("change", updateManualInputState));
+descriptionRadios.forEach((r) => r.addEventListener("change", updateManualInputState));
+updateManualInputState();
+
+manualSuffixInput.addEventListener("focus", () => {
+  (document.getElementById("namingManual") as HTMLInputElement).checked = true;
+  updateManualInputState();
+});
+manualCreatorInput.addEventListener("focus", () => {
+  (document.getElementById("creatorManual") as HTMLInputElement).checked = true;
+  updateManualInputState();
+});
+manualDescriptionInput.addEventListener("focus", () => {
+  (document.getElementById("descManual") as HTMLInputElement).checked = true;
+  updateManualInputState();
+});
+
+function updateNamingPreviews() {
+  const shortId = currentJobId ? currentJobId.split("-")[0] : "job1234";
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const sppSuffix = lastKnownDriverName ? sanitizeForPreview(lastKnownDriverName) : "Custom";
+
+  document.getElementById("previewJobid")!.textContent = `→ ...-${shortId}`;
+  document.getElementById("previewSpp")!.textContent = `→ ...-${sppSuffix}`;
+  document.getElementById("previewDate")!.textContent = `→ ...-Custom-${dateStr}`;
+  document.getElementById("previewCombined")!.textContent = `→ ...-${shortId}-${dateStr}`;
+
+  const driverSourceLabel = lastKnownDriverName
+    ? lastKnownDriverName
+    : (document.querySelectorAll("#addedVibsList .added-vib-row").length > 0
+        ? "individually added VIB(s) only"
+        : "none");
+  const selectedCount = packageList.querySelectorAll(
+    "input[type=checkbox]:checked, input[type=radio]:checked"
+  ).length;
+  const dateReadable = now.toISOString().slice(0, 10);
+  document.getElementById("previewDescAuto")!.textContent =
+    `Custom ESXi image built ${dateReadable} via ESXi Custom Image Builder. ` +
+    `Base: ${lastKnownBaseName ?? "(not yet uploaded)"}. ` +
+    `Driver source: ${driverSourceLabel}. ${selectedCount} driver(s) injected.`;
+}
+updateNamingPreviews();
+
 buildBtn.addEventListener("click", async () => {
   clearError();
   if (!currentJobId) return;
@@ -1063,6 +1148,27 @@ buildBtn.addEventListener("click", async () => {
     return;
   }
 
+  const namingMode = getSelectedNamingMode();
+  const customSuffix = manualSuffixInput.value.trim();
+  if (namingMode === "manual" && !customSuffix) {
+    showError("Enter a custom profile name, or choose one of the other naming options.");
+    return;
+  }
+
+  const creatorMode = getSelectedCreatorMode();
+  const customCreator = manualCreatorInput.value.trim();
+  if (creatorMode === "manual" && !customCreator) {
+    showError("Enter a custom creator name, or use the default.");
+    return;
+  }
+
+  const descriptionMode = getSelectedDescriptionMode();
+  const customDescription = manualDescriptionInput.value.trim();
+  if (descriptionMode === "manual" && !customDescription) {
+    showError("Enter a custom description, or choose Auto-generated / Inherit.");
+    return;
+  }
+
   buildBtn.disabled = true;
   buildBtn.textContent = "Building...";
 
@@ -1070,7 +1176,16 @@ buildBtn.addEventListener("click", async () => {
     const res = await fetch(`/api/jobs/${currentJobId}/build`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ selectedPackages, exportFormats }),
+      body: JSON.stringify({
+        selectedPackages,
+        exportFormats,
+        namingMode,
+        customSuffix,
+        creatorMode,
+        customCreator,
+        descriptionMode,
+        customDescription,
+      }),
     });
     if (!res.ok) {
       const err = await res.json();

@@ -169,6 +169,7 @@
       font-size: 0.82rem;
     }
 
+    #build-section { margin-top: 24px; }
     #outputs-section { margin-top: 24px; }
     .output-row {
       display: flex;
@@ -216,8 +217,14 @@
       font-size: 0.78rem;
     }
 
+    #selection-section {
+      display: flex;
+      flex-direction: column;
+    }
+
     #package-list {
-      max-height: 360px;
+      flex: 1;
+      min-height: 0;
       overflow-y: auto;
       padding-right: 4px;
     }
@@ -231,6 +238,60 @@
     }
     .package-group .package-row { border-bottom: 1px solid var(--panel-border); }
     .package-group .package-row:last-child { border-bottom: none; }
+
+    .naming-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 4px;
+      font-size: 0.88rem;
+    }
+    .naming-preview {
+      color: var(--text-dim);
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 0.75rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+      text-align: right;
+    }
+    .naming-row-manual { align-items: center; }
+    .naming-preview-block {
+      color: var(--text-dim);
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 0.75rem;
+      line-height: 1.5;
+      margin: 2px 4px 8px 32px;
+      white-space: pre-wrap;
+    }
+    #manualDescriptionInput {
+      width: 100%;
+      min-height: 70px;
+      resize: vertical;
+      background: #0f131b;
+      color: var(--text);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      margin-top: 4px;
+    }
+    #manualDescriptionInput:disabled { opacity: 0.4; }
+    #manualSuffixInput {
+      flex: 1;
+      min-width: 0;
+      background: #0f131b;
+      color: var(--text);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 0.82rem;
+      font-family: "SF Mono", Consolas, monospace;
+    }
+    #manualSuffixInput:disabled { opacity: 0.4; }
 
     .package-row {
       display: flex;
@@ -641,8 +702,11 @@
       Waiting for both files to upload and be scanned — available drivers will appear here.
     </p>
     <div id="package-list"></div>
+  </fieldset>
+  </div>
 
-    <label style="margin-top:16px;">Export format(s)</label>
+  <fieldset id="build-section">
+    <label style="margin-bottom:0;">Export format(s)</label>
     <div class="package-row">
       <input type="checkbox" id="formatIso" value="iso" checked />
       <label for="formatIso" style="font-weight:normal; margin:0;">Bootable ISO</label>
@@ -651,6 +715,62 @@
       <input type="checkbox" id="formatBundle" value="bundle" />
       <label for="formatBundle" style="font-weight:normal; margin:0;">vLCM offline bundle (.zip)</label>
     </div>
+
+    <label style="margin-top:16px;">Profile name</label>
+    <div class="naming-row">
+      <input type="radio" name="namingMode" id="namingJobid" value="jobid" checked />
+      <label for="namingJobid" style="font-weight:normal; margin:0;">Job ID</label>
+      <span class="naming-preview" id="previewJobid"></span>
+    </div>
+    <div class="naming-row">
+      <input type="radio" name="namingMode" id="namingSpp" value="spp" />
+      <label for="namingSpp" style="font-weight:normal; margin:0;">SPP / source name</label>
+      <span class="naming-preview" id="previewSpp"></span>
+    </div>
+    <div class="naming-row">
+      <input type="radio" name="namingMode" id="namingDate" value="date" />
+      <label for="namingDate" style="font-weight:normal; margin:0;">Date stamp</label>
+      <span class="naming-preview" id="previewDate"></span>
+    </div>
+    <div class="naming-row">
+      <input type="radio" name="namingMode" id="namingCombined" value="combined" />
+      <label for="namingCombined" style="font-weight:normal; margin:0;">Job ID + date</label>
+      <span class="naming-preview" id="previewCombined"></span>
+    </div>
+    <div class="naming-row naming-row-manual">
+      <input type="radio" name="namingMode" id="namingManual" value="manual" />
+      <label for="namingManual" style="font-weight:normal; margin:0;">Custom:</label>
+      <input type="text" id="manualSuffixInput" placeholder="e.g. QA-build-04" maxlength="60" />
+    </div>
+
+    <label style="margin-top:16px;">Creator</label>
+    <div class="naming-row">
+      <input type="radio" name="creatorMode" id="creatorDefault" value="default" checked />
+      <label for="creatorDefault" style="font-weight:normal; margin:0;">Default</label>
+      <span class="naming-preview">InternalTooling</span>
+    </div>
+    <div class="naming-row naming-row-manual">
+      <input type="radio" name="creatorMode" id="creatorManual" value="manual" />
+      <label for="creatorManual" style="font-weight:normal; margin:0;">Custom:</label>
+      <input type="text" id="manualCreatorInput" placeholder="e.g. Platform Team" maxlength="60" />
+    </div>
+
+    <label style="margin-top:16px;">Description</label>
+    <div class="naming-row naming-row-description">
+      <input type="radio" name="descriptionMode" id="descAuto" value="auto" checked />
+      <label for="descAuto" style="font-weight:normal; margin:0;">Auto-generated</label>
+    </div>
+    <p class="naming-preview naming-preview-block" id="previewDescAuto"></p>
+    <div class="naming-row">
+      <input type="radio" name="descriptionMode" id="descInherit" value="inherit" />
+      <label for="descInherit" style="font-weight:normal; margin:0;">Inherit from base image</label>
+      <span class="naming-preview">(keeps the original ESXi release description)</span>
+    </div>
+    <div class="naming-row naming-row-manual">
+      <input type="radio" name="descriptionMode" id="descManual" value="manual" />
+      <label for="descManual" style="font-weight:normal; margin:0;">Custom:</label>
+    </div>
+    <textarea id="manualDescriptionInput" placeholder="Describe this build..." maxlength="500" disabled></textarea>
 
     <div style="margin-top:12px;">
       <button id="buildBtn" disabled>Build Custom Image</button>
@@ -661,7 +781,7 @@
     </div>
     <div class="progress-label hidden" id="buildProgressLabel"></div>
   </fieldset>
-  </div>
+
 
   <fieldset id="download-section" class="hidden">
     <p>Your custom image is ready.</p>

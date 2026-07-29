@@ -72,6 +72,9 @@ export function buildImage(
     exportFormats: ("iso" | "bundle")[];
     outputIsoPath?: string;
     outputBundlePath?: string;
+    profileSuffix?: string;
+    vendor?: string;
+    description?: string;
   },
   onLog?: (line: string) => void
 ) {
@@ -87,5 +90,8 @@ export function buildImage(
   ];
   if (opts.outputIsoPath) args.push("-OutputIsoPath", opts.outputIsoPath);
   if (opts.outputBundlePath) args.push("-OutputBundlePath", opts.outputBundlePath);
+  if (opts.profileSuffix) args.push("-ProfileSuffix", opts.profileSuffix);
+  if (opts.vendor) args.push("-Vendor", opts.vendor);
+  if (opts.description) args.push("-Description", opts.description);
   return runPwsh("build-image.ps1", args, onLog);
 }

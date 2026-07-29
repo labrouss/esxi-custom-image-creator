@@ -15,7 +15,9 @@ param(
   [Parameter(Mandatory = $false)][string]$ExportFormatsJson = '["iso"]',
   [Parameter(Mandatory = $false)][string]$OutputIsoPath,
   [Parameter(Mandatory = $false)][string]$OutputBundlePath,
-  [Parameter(Mandatory = $false)][string]$ProfileSuffix = "Custom"
+  [Parameter(Mandatory = $false)][string]$ProfileSuffix = "Custom",
+  [Parameter(Mandatory = $false)][string]$Vendor = "InternalTooling",
+  [Parameter(Mandatory = $false)][string]$Description
 )
 
 $ErrorActionPreference = "Stop"
@@ -83,8 +85,17 @@ try {
     Remove-EsxImageProfile -ImageProfile $newProfileName -Confirm:$false
   }
 
-  Write-Progress-Line "Cloning base profile '$($base.Name)' into '$newProfileName'..."
-  New-EsxImageProfile -CloneProfile $base -Name $newProfileName -Vendor "InternalTooling" -AcceptanceLevel PartnerSupported | Out-Null
+  Write-Progress-Line "Cloning base profile '$($base.Name)' into '$newProfileName' (creator: $Vendor)..."
+  if ($Description) {
+    Write-Progress-Line "Setting profile description (custom/auto-generated, not inherited from base)."
+    New-EsxImageProfile -CloneProfile $base -Name $newProfileName -Vendor $Vendor -Description $Description -AcceptanceLevel PartnerSupported | Out-Null
+  } else {
+    # No Description override: the cloned profile keeps the base image's own
+    # description (e.g. the generic "GA release of ESXi..." blurb) — this is
+    # the "inherit from base" choice in the UI, not a bug.
+    Write-Progress-Line "Keeping the base image's original description (inherit mode)."
+    New-EsxImageProfile -CloneProfile $base -Name $newProfileName -Vendor $Vendor -AcceptanceLevel PartnerSupported | Out-Null
+  }
 
   if ($SelectedPackages.Count -gt 0) {
     Write-Progress-Line "Resolving $($SelectedPackages.Count) selected package(s) to exact VIB versions..."
