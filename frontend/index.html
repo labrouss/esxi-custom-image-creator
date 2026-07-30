@@ -33,7 +33,7 @@
 
     .two-col {
       display: flex;
-      align-items: stretch;
+      align-items: flex-start;
       gap: 20px;
     }
     .two-col > fieldset {
@@ -220,6 +220,7 @@
     #selection-section {
       display: flex;
       flex-direction: column;
+      overflow: hidden;
     }
 
     #package-list {
@@ -593,6 +594,30 @@
       margin-bottom: 14px;
     }
     #download-section a { margin-right: 10px; text-decoration: none; }
+
+    .build-summary {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .build-summary-row {
+      display: flex;
+      gap: 8px;
+      font-size: 0.82rem;
+      align-items: baseline;
+    }
+    .build-summary-label {
+      color: var(--text-dim);
+      min-width: 100px;
+      flex-shrink: 0;
+    }
+    .build-summary-value {
+      color: var(--text);
+      font-family: "SF Mono", Consolas, monospace;
+      font-size: 0.78rem;
+      word-break: break-word;
+    }
   </style>
 </head>
 <body>
@@ -686,6 +711,10 @@
       <p id="analyzeHint" style="color: var(--text-dim); font-size: 0.8rem; margin-top: 6px;">
         Add a base image plus an SPP/SSP and/or at least one VIB, then click Analyze when ready.
       </p>
+      <div class="progress-track indeterminate hidden" id="analyzeProgressTrack">
+        <div class="progress-fill indeterminate-fill" id="analyzeProgressFill"></div>
+      </div>
+      <div class="progress-label hidden" id="analyzeProgressLabel"></div>
     </div>
   </fieldset>
 
@@ -785,6 +814,7 @@
 
   <fieldset id="download-section" class="hidden">
     <p>Your custom image is ready.</p>
+    <div id="buildSummary" class="build-summary"></div>
     <a id="downloadIsoLink" href="#" class="hidden"><button>Download ISO</button></a>
     <a id="downloadBundleLink" href="#" class="hidden" style="margin-left:8px;"><button>Download vLCM Bundle</button></a>
     <div style="margin-top:14px;">

@@ -35,5 +35,8 @@ export interface JobState {
   exportFormats?: ExportFormat[];
   outputIsoPath?: string;
   outputBundlePath?: string;
+  profileName?: string;
+  creator?: string;
+  description?: string;
   error?: string;
 }

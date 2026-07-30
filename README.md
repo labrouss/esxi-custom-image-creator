@@ -43,7 +43,13 @@ and UI on top of it.
    what's still needed). Clicking it is the explicit trigger for
    extraction/inspection below — nothing runs automatically the moment
    requirements are met, so you can keep adding more VIBs first without
-   racing an auto-trigger.
+   racing an auto-trigger. An indeterminate progress bar with a
+   live-updating label shows real steps as they happen ("Importing
+   VMware.PowerCLI module...", "Adding depot: ...", "Found N package(s)"),
+   streamed from the PowerShell process the same way the build step already
+   does. Once analysis finishes, the page automatically scrolls to and
+   briefly highlights the Export format(s)/Profile name panel so it's
+   obvious where to go next.
 3. **Extract & inspect** — the SPP/SSP (if provided) is extracted with `7z`
    (works without loop-mounting, so no `--privileged` container needed).
    Discovery of the real depot zips is **manifest-driven**: it reads
@@ -87,10 +93,22 @@ and UI on top of it.
    the log panel below.
 7. **Download** — grab the resulting file(s) from the browser. If you
    picked both formats, two download buttons appear. Output filenames
-   include a reference to the SPP/SSP source file (e.g.
-   `a1b2c3d4-Synergy_Service_Pack_SSP_2026.07.02_Z7550-98164-custom-esxi.iso`)
-   so it's clear which SSP drove a given build, alongside a short job-id
-   prefix for uniqueness.
+   follow whichever **Profile name** mode you chose (Job ID / SPP source
+   name / Date stamp / Job ID + date / Custom) — the same human-chosen name
+   embedded in the ISO also leads the filename on disk, e.g. with the SPP
+   mode: `Synergy_Service_Pack_SSP_2026.07.02_Z7550-98164-a1b2c3d4-custom-
+   esxi.iso`. For naming modes that don't already guarantee uniqueness on
+   their own (SPP name, Date stamp, Custom — e.g. two same-day builds, or
+   two builds reusing the same custom name, would otherwise silently
+   overwrite each other's output file), a short job-id is appended to keep
+   every build's file safe from collision; Job ID and Job ID + date modes
+   already embed it, so nothing extra is added there. A summary above the
+   download buttons shows exactly what was used — file names, Profile name,
+   Creator, and Description — pulled from the actual values PowerCLI used
+   (the profile name comes back from the PowerShell result itself, not
+   recomputed on the frontend). The page automatically scrolls to and
+   briefly highlights this panel once the build finishes, the same way it
+   does for the Export format(s) panel once analysis completes.
 
 A **"Previously built images"** section below the main panels lists every
 ISO/bundle sitting in `/data/output`, with a Download and a Delete button

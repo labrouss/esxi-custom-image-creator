@@ -25,6 +25,9 @@ interface JobState {
   candidatePackages?: CandidatePackage[];
   outputIsoPath?: string;
   outputBundlePath?: string;
+  profileName?: string;
+  creator?: string;
+  description?: string;
   error?: string;
   baseReady?: boolean;
   baseOriginalName?: string;
@@ -66,6 +69,8 @@ const analyzeHint = document.getElementById("analyzeHint")!;
 const buildBtn = document.getElementById("buildBtn") as HTMLButtonElement;
 const buildProgressTrack = document.getElementById("buildProgressTrack")!;
 const buildProgressLabel = document.getElementById("buildProgressLabel")!;
+const analyzeProgressTrack = document.getElementById("analyzeProgressTrack")!;
+const analyzeProgressLabel = document.getElementById("analyzeProgressLabel")!;
 const downloadIsoLink = document.getElementById("downloadIsoLink") as HTMLAnchorElement;
 const downloadBundleLink = document.getElementById("downloadBundleLink") as HTMLAnchorElement;
 
@@ -257,10 +262,30 @@ function notifyPhaseChange(jobId: string, phase: string, extra?: string) {
   if (lastNotifiedPhase.get(jobId) === phase) return;
   lastNotifiedPhase.set(jobId, phase);
   const shortId = jobId.split("-")[0];
-  if (phase === "ready_for_selection") showToast(`Job ${shortId}: drivers ready to select`, "success");
-  else if (phase === "building") showToast(`Job ${shortId}: build started`, "info");
-  else if (phase === "done") showToast(`Job ${shortId}: build complete — ready to download`, "success");
-  else if (phase === "error") showToast(`Job ${shortId} failed: ${extra ?? "unknown error"}`, "error");
+  if (phase === "ready_for_selection") {
+    showToast(`Job ${shortId}: drivers ready to select`, "success");
+    setTimeout(focusBuildSection, 0);
+  } else if (phase === "building") showToast(`Job ${shortId}: build started`, "info");
+  else if (phase === "done") {
+    showToast(`Job ${shortId}: build complete — ready to download`, "success");
+    setTimeout(focusDownloadSection, 0);
+  } else if (phase === "error") showToast(`Job ${shortId} failed: ${extra ?? "unknown error"}`, "error");
+}
+
+/** Scrolls to the export-format/build panel and briefly highlights it once analysis finishes. */
+function focusBuildSection() {
+  const buildSection = document.getElementById("build-section");
+  if (!buildSection) return;
+  buildSection.scrollIntoView({ behavior: "smooth", block: "center" });
+  buildSection.classList.add("tour-highlight-target");
+  setTimeout(() => buildSection.classList.remove("tour-highlight-target"), 1600);
+}
+
+/** Scrolls to and briefly highlights the download panel once the build finishes. */
+function focusDownloadSection() {
+  downloadSection.scrollIntoView({ behavior: "smooth", block: "center" });
+  downloadSection.classList.add("tour-highlight-target");
+  setTimeout(() => downloadSection.classList.remove("tour-highlight-target"), 1600);
 }
 
 function startOver(e?: Event) {
@@ -492,6 +517,22 @@ function updateAnalyzeVisibility(job: JobState) {
   }
 }
 
+/**
+ * Keeps the driver-selection panel's height matched to the upload panel's
+ * actual content height, so the right column scrolls internally instead of
+ * either stretching the shorter left column to match a long driver list, or
+ * growing the whole page unbounded. Left panel content varies (progress
+ * bars, reuse rows, added-VIBs list), so this is recalculated whenever
+ * either side's content could have changed, rather than set once.
+ */
+function syncPanelHeight() {
+  const leftHeight = uploadSection.getBoundingClientRect().height;
+  if (leftHeight > 0) {
+    selectionSection.style.maxHeight = `${leftHeight}px`;
+  }
+}
+window.addEventListener("resize", syncPanelHeight);
+
 async function poll(jobId: string) {
   const res = await fetch(`/api/jobs/${jobId}`);
   const job: JobState = await res.json();
@@ -502,6 +543,7 @@ async function poll(jobId: string) {
   lastKnownDriverName = job.driverOriginalName ?? null;
   lastKnownBaseName = job.baseOriginalName ?? null;
   updateNamingPreviews();
+  syncPanelHeight();
 
   if (job.phase === "building") {
     buildProgressTrack.classList.remove("hidden");
@@ -511,6 +553,16 @@ async function poll(jobId: string) {
   } else {
     buildProgressTrack.classList.add("hidden");
     buildProgressLabel.classList.add("hidden");
+  }
+
+  if (job.phase === "inspecting") {
+    analyzeProgressTrack.classList.remove("hidden");
+    analyzeProgressLabel.classList.remove("hidden");
+    const lastLine = (job.log ?? [])[job.log.length - 1];
+    analyzeProgressLabel.textContent = lastLine ?? "Analyzing...";
+  } else {
+    analyzeProgressTrack.classList.add("hidden");
+    analyzeProgressLabel.classList.add("hidden");
   }
 
   if (job.phase === "error") {
@@ -541,9 +593,31 @@ async function poll(jobId: string) {
       downloadBundleLink.href = `/api/jobs/${jobId}/download/bundle`;
       downloadBundleLink.classList.remove("hidden");
     }
+    renderBuildSummary(job);
     loadOutputsList();
     return;
   }
+}
+
+function renderBuildSummary(job: JobState) {
+  const rows: { label: string; value: string }[] = [];
+  if (job.outputIsoPath) rows.push({ label: "ISO file", value: job.outputIsoPath.split("/").pop()! });
+  if (job.outputBundlePath) rows.push({ label: "Bundle file", value: job.outputBundlePath.split("/").pop()! });
+  if (job.profileName) rows.push({ label: "Profile name", value: job.profileName });
+  if (job.creator) rows.push({ label: "Creator", value: job.creator });
+  rows.push({ label: "Description", value: job.description ?? "(inherited from base image)" });
+
+  const buildSummary = document.getElementById("buildSummary")!;
+  buildSummary.innerHTML = rows
+    .map(
+      (r) => `
+        <div class="build-summary-row">
+          <span class="build-summary-label">${r.label}:</span>
+          <span class="build-summary-value">${r.value}</span>
+        </div>
+      `
+    )
+    .join("");
 }
 
 const tasksBtn = document.getElementById("tasksBtn") as HTMLButtonElement;
@@ -1198,3 +1272,5 @@ buildBtn.addEventListener("click", async () => {
     buildBtn.textContent = "Build Custom ISO";
   }
 });
+
+setTimeout(syncPanelHeight, 300);

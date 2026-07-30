@@ -136,17 +136,9 @@ router.post("/:id/build", async (req, res) => {
   (async () => {
     try {
       const shortJobId = job.id.split("-")[0];
-      const sppLabel = job.driverOriginalName ? sanitizeForFilename(job.driverOriginalName) : "spp";
-      const baseName = `${shortJobId}-${sppLabel}-custom-esxi`;
-
-      const outputIsoPath = formats.includes("iso") ? path.join(OUTPUT_DIR, `${baseName}.iso`) : undefined;
-      const outputBundlePath = formats.includes("bundle")
-        ? path.join(OUTPUT_DIR, `${baseName}-bundle.zip`)
-        : undefined;
 
       // Profile name embedded inside the ISO itself (visible via esxcli on a
-      // deployed host, and in \UPGRADE\PROFILE.XML) — separate from the output
-      // filename above, though they share the same short-job-id convention.
+      // deployed host, and in \UPGRADE\PROFILE.XML).
       const now = new Date();
       const dateStamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
       let profileSuffix: string;
@@ -169,6 +161,24 @@ router.post("/:id/build", async (req, res) => {
           break;
       }
       appendLog(job.id, `Profile name suffix: "${profileSuffix}" (mode: ${namingMode ?? "jobid"})`);
+
+      // Output filenames now follow the same naming choice as the embedded
+      // profile name, for consistency between what's on disk and what's
+      // inside the ISO. "jobid" and "combined" already embed the job id (so
+      // they're guaranteed unique on their own); "spp", "date", and "manual"
+      // don't (e.g. two same-day builds, or two builds reusing the same
+      // manual name, would otherwise silently overwrite each other's output
+      // file) — so the short job id is appended for those to keep every
+      // build's output safe from collision, while still leading with the
+      // human-chosen name.
+      const filenameBase =
+        namingMode === "jobid" || namingMode === "combined" ? profileSuffix : `${profileSuffix}-${shortJobId}`;
+      const baseName = `${filenameBase}-custom-esxi`;
+
+      const outputIsoPath = formats.includes("iso") ? path.join(OUTPUT_DIR, `${baseName}.iso`) : undefined;
+      const outputBundlePath = formats.includes("bundle")
+        ? path.join(OUTPUT_DIR, `${baseName}-bundle.zip`)
+        : undefined;
 
       const vendor = creatorMode === "manual" ? customCreator!.trim() : "InternalTooling";
 
@@ -222,6 +232,9 @@ router.post("/:id/build", async (req, res) => {
         phase: "done",
         outputIsoPath: result.outputIsoPath ?? undefined,
         outputBundlePath: result.outputBundlePath ?? undefined,
+        profileName: result.profileName ?? undefined,
+        creator: vendor,
+        description: description ?? undefined,
       });
       appendLog(
         job.id,
